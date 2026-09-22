@@ -8,20 +8,19 @@ import {
   TouchableOpacity,
   KeyboardAvoidingView,
   Platform,
-  SafeAreaView,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RealMap from '../components/RealMap';
 import { POPULAR_LOCATIONS } from '../data/mockData';
 import { useTheme } from '../theme/ThemeProvider';
-import { type, spacing, radius } from '../theme/typography';
+import { type, spacing, radius, fonts } from '../theme/typography';
 import MaterialIcon, { MaterialIconName } from '../components/MaterialIcon';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const SAVED_CHIPS = [
-  { title: 'Home', sub: '12A Lake View', icon: 'home' as MaterialIconName, primary: true },
-  { title: 'Office', sub: 'Ramanujan IT City', icon: 'apartment' as MaterialIconName, primary: false },
-  { title: 'Gym', sub: 'Chamiers Rd', icon: 'fitness-center' as MaterialIconName, primary: false },
+  { title: 'Home', icon: 'home' as MaterialIconName, primary: true },
+  { title: 'Office', icon: 'apartment' as MaterialIconName, primary: false },
+  { title: 'Gym', icon: 'fitness-center' as MaterialIconName, primary: false },
 ];
 
 const PLACE_ICONS_FACTORY = (c: any): Record<string, { icon: MaterialIconName; bg: string; color: string }> => ({
@@ -35,26 +34,26 @@ export default function DestinationSearchScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { vehicle } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   
   const [destination, setDestination] = useState('');
 
   return (
     <View style={styles.container}>
-      {/* 1. Full Screen Interactive Map Background */}
+      {/* Background Map */}
       <RealMap interactive style={StyleSheet.absoluteFill} />
 
-      {/* 2. Floating Center Pin Overlay */}
+      {/* Floating Center Pin for the Map */}
       <View style={styles.centerPinWrap} pointerEvents="none">
         <View style={styles.centerPinIconWrap}>
           <MaterialIcon name="location-on" size={28} color={colors.accentRed} />
         </View>
-        {/* Pin shadow on the ground */}
         <View style={styles.centerPinShadow} />
       </View>
 
-      {/* 3. Floating Back Button */}
-      <View style={[styles.headerOverlay, { paddingTop: Math.max(insets.top, 16) }]} pointerEvents="box-none">
+      {/* Back Button (Absolute Top Left) */}
+      <View style={[styles.backBtnWrap, { top: Math.max(insets.top, 16) }]} pointerEvents="box-none">
         <TouchableOpacity 
           style={styles.backBtn} 
           activeOpacity={0.8}
@@ -64,16 +63,19 @@ export default function DestinationSearchScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* 4. Keyboard Avoiding Bottom Sheet */}
-      <View style={styles.bottomDockWrapper} pointerEvents="box-none">
-        <KeyboardAvoidingView 
-          behavior={Platform.OS === 'ios' ? 'padding' : undefined} 
-          style={styles.keyboardWrap}
-          pointerEvents="box-none"
-        >
-          <View style={styles.sheetContainer} pointerEvents="auto">
+      {/* Keyboard Avoiding Container for Bottom Sheet */}
+      <KeyboardAvoidingView
+        style={styles.keyboardView}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        pointerEvents="box-none"
+      >
+        {/* Transparent spacer to push sheet to the bottom */}
+        <View style={styles.flexSpacer} pointerEvents="none" />
+
+        {/* Bottom Sheet */}
+        <View style={styles.sheetContainer} pointerEvents="auto">
           
-          {/* Floating Locate Me Button (sitting just above the sheet) */}
+          {/* Floating Locate Me Button just above the sheet */}
           <TouchableOpacity style={styles.locateBtn} activeOpacity={0.9}>
             <MaterialIcon name="my-location" size={24} color={colors.primary} />
           </TouchableOpacity>
@@ -117,7 +119,7 @@ export default function DestinationSearchScreen() {
                     autoFocus
                   />
                   {destination.length > 0 && (
-                    <TouchableOpacity onPress={() => setDestination('')}>
+                    <TouchableOpacity onPress={() => setDestination('')} style={styles.clearBtn}>
                       <MaterialIcon name="close" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
                   )}
@@ -129,6 +131,7 @@ export default function DestinationSearchScreen() {
 
           {/* Scrollable Content inside Sheet */}
           <ScrollView 
+            style={styles.scrollArea}
             contentContainerStyle={styles.scrollContent} 
             showsVerticalScrollIndicator={false}
             keyboardShouldPersistTaps="handled"
@@ -142,7 +145,7 @@ export default function DestinationSearchScreen() {
                   activeOpacity={0.8}
                   onPress={() => {
                     setDestination(chip.title);
-                    router.push('/select-ride' as never);
+                    router.push({ pathname: '/select-ride', params: { vehicle } });
                   }}
                 >
                   <View style={[styles.chipIconWrap, chip.primary ? styles.chipPrimary : styles.chipNeutral]}>
@@ -153,7 +156,6 @@ export default function DestinationSearchScreen() {
               ))}
             </ScrollView>
 
-            {/* divider */}
             <View style={styles.divider} />
 
             {/* Popular Locations List */}
@@ -168,7 +170,7 @@ export default function DestinationSearchScreen() {
                     activeOpacity={0.7}
                     onPress={() => {
                       setDestination(item.title);
-                      router.push('/select-ride' as never);
+                      router.push({ pathname: '/select-ride', params: { vehicle } });
                     }}
                   >
                     <View style={[styles.listIconWrapper, { backgroundColor: iconCfg.bg }]}>
@@ -184,8 +186,7 @@ export default function DestinationSearchScreen() {
             </View>
           </ScrollView>
         </View>
-        </KeyboardAvoidingView>
-      </View>
+      </KeyboardAvoidingView>
     </View>
   );
 }
@@ -195,12 +196,15 @@ const createStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     backgroundColor: colors.surface,
   },
-  headerOverlay: {
+  keyboardView: {
+    flex: 1,
+  },
+  flexSpacer: {
+    flex: 1,
+  },
+  backBtnWrap: {
     position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    paddingHorizontal: spacing.marginMobile,
+    left: spacing.marginMobile,
     zIndex: 10,
   },
   backBtn: {
@@ -218,10 +222,10 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   centerPinWrap: {
     position: 'absolute',
-    top: '50%',
+    top: '40%', // slightly above center so it is visible above the bottom sheet
     left: '50%',
-    marginLeft: -16, // half of width
-    marginTop: -40, // offset to place tip at center
+    marginLeft: -16, 
+    marginTop: -40, 
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
@@ -246,27 +250,18 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 6,
     backgroundColor: 'rgba(0,0,0,0.3)',
   },
-  bottomDockWrapper: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    zIndex: 10,
-  },
-  keyboardWrap: {
-    width: '100%',
-    justifyContent: 'flex-end',
-  },
   sheetContainer: {
     backgroundColor: colors.surface,
     borderTopLeftRadius: radius.xl,
     borderTopRightRadius: radius.xl,
-    maxHeight: '75%',
+    maxHeight: '80%', // Allows it to grow up to 80% of screen
     shadowColor: '#000',
     shadowOffset: { width: 0, height: -4 },
     shadowOpacity: 0.1,
     shadowRadius: 16,
     elevation: 20,
+    // Add extra padding at the bottom to ensure it completely covers the bottom edge safely
+    paddingBottom: Platform.OS === 'ios' ? 24 : 16,
   },
   locateBtn: {
     position: 'absolute',
@@ -302,7 +297,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   inputStack: {
     position: 'relative',
-    backgroundColor: colors.surfaceContainerLowest,
+    backgroundColor: colors.surface,
     borderRadius: radius.lg,
     paddingVertical: 8,
     borderWidth: 1,
@@ -358,17 +353,24 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.onSurface,
     height: '100%',
   },
+  clearBtn: {
+    padding: 4,
+  },
   connectorLine: {
     position: 'absolute',
     left: 27,
-    top: 40,
-    bottom: 40,
+    top: 44,
+    bottom: 44,
     width: 2,
     backgroundColor: colors.surfaceContainerHigh,
     zIndex: -1,
   },
+  scrollArea: {
+    // Limits the list from stretching the sheet beyond maxHeight
+    flexShrink: 1,
+  },
   scrollContent: {
-    paddingBottom: spacing.stackXl * 2,
+    paddingBottom: spacing.stackXl,
   },
   savedScroll: {
     paddingHorizontal: spacing.marginMobile,
@@ -427,6 +429,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   listTitle: {
     ...type.labelMd,
     color: colors.onSurface,
+    fontFamily: fonts.semibold,
     marginBottom: 2,
   },
   listSubtitle: {

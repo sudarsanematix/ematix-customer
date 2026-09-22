@@ -165,11 +165,14 @@ export const INITIAL_ORDERS = [
     pickup: 'Greenways Road, RA Puram',
     dropoff: '12th Cross St, Indiranagar',
     date: 'Today, 06:14 PM',
+    time: '06:14 PM',
     status: 'Completed',
     price: 79,
     partnerName: 'Suresh Kumar',
     vehicle: 'Honda Activa 6G',
     rating: 5,
+    paymentMethod: 'UPI • GPay',
+    fare: { base: 40, distance: 39, surcharge: 0, coupon: null, couponValue: 0, tip: 0 },
   },
   {
     id: 'EMX-88294',
@@ -178,11 +181,14 @@ export const INITIAL_ORDERS = [
     pickup: 'Anna Salai, Mount Road',
     dropoff: 'Marina Bay Promenade',
     date: 'Today, 05:42 PM',
+    time: '05:42 PM',
     status: 'Completed',
     price: 130,
     partnerName: 'Karthik Raja',
     vehicle: 'Bajaj Compact Auto',
     rating: 5,
+    paymentMethod: 'Google Pay UPI',
+    fare: { base: 60, distance: 70, surcharge: 25, coupon: 'EMATIX50', couponValue: 25, tip: 0 },
   },
   {
     id: 'EM-77210',
@@ -191,15 +197,69 @@ export const INITIAL_ORDERS = [
     pickup: '12A Lake View Rd, Nungambakkam',
     dropoff: 'Ramanujan IT City, Taramani',
     date: 'Yesterday, 09:15 AM',
+    time: '09:15 AM',
     status: 'Completed',
     price: 210,
     partnerName: 'Venkatesh R.',
     vehicle: 'Maruti WagonR AC',
     rating: 4.8,
+    paymentMethod: 'Paytm UPI',
+    fare: { base: 90, distance: 120, surcharge: 0, coupon: null, couponValue: 0, tip: 0 },
   },
 ];
 
 export const PAST_ORDERS = INITIAL_ORDERS;
+
+export const NOTIFICATIONS = [
+  {
+    id: 'n1',
+    type: 'ride',
+    title: 'Your ride is completed',
+    message: 'Auto ride from Anna Salai to Marina Bay Promenade ended at 05:42 PM. Thanks for riding with Ematix!',
+    time: 'Today, 05:44 PM',
+    read: false,
+  },
+  {
+    id: 'n2',
+    type: 'delivery',
+    title: 'Parcel delivered',
+    message: 'Suresh handed over your package to the receiver. OTP verified successfully.',
+    time: 'Today, 06:16 PM',
+    read: false,
+  },
+  {
+    id: 'n3',
+    type: 'offer',
+    title: '40% off your next Auto ride',
+    message: 'Flat 40% off (up to ₹40) on city Auto rides this weekend. Use code WKND40.',
+    time: 'Today, 10:00 AM',
+    read: false,
+  },
+  {
+    id: 'n4',
+    type: 'safety',
+    title: 'Safety tip',
+    message: 'Share your live trip with an emergency contact for extra peace of mind on night rides.',
+    time: 'Yesterday, 09:12 PM',
+    read: true,
+  },
+  {
+    id: 'n5',
+    type: 'ride',
+    title: 'Driver on the way',
+    message: 'Karthik was 2 mins away and reached your pickup on time for your office commute.',
+    time: 'Yesterday, 09:02 AM',
+    read: true,
+  },
+  {
+    id: 'n6',
+    type: 'offer',
+    title: 'Ematix Points earned',
+    message: 'You earned 40 Ematix Points for your last delivery. Redeem them for ride discounts.',
+    time: 'Sep 19, 06:30 PM',
+    read: true,
+  },
+];
 
 export const TRAVEL_PROMPTS = [
   {

@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useState, ReactNode } from 'react';
-import { useColorScheme } from 'react-native';
 import { lightColors, darkColors } from './colors';
 
 type ThemeType = {

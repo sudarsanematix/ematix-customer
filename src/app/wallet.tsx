@@ -45,7 +45,7 @@ export default function WalletScreen() {
       
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={styles.backBtn} onPress={() => router.back()} accessibilityLabel="Go back" accessibilityRole="button" hitSlop={8}>
           <MaterialIcon name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Ematix Pay</Text>
@@ -142,7 +142,7 @@ export default function WalletScreen() {
       </View>
 
       {/* Add Money Modal */}
-      <Modal visible={addMoneyModalVisible} transparent animationType="slide">
+      <Modal visible={addMoneyModalVisible} transparent animationType="slide" onRequestClose={() => setAddMoneyModalVisible(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.dragHandle} />
@@ -191,7 +191,7 @@ export default function WalletScreen() {
       </Modal>
 
       {/* Success Modal */}
-      <Modal visible={successVisible} transparent animationType="fade">
+      <Modal visible={successVisible} transparent animationType="fade" onRequestClose={() => setSuccessVisible(false)}>
         <View style={styles.modalOverlayCenter}>
           <View style={styles.successCard}>
             <View style={styles.successIconWrap}>

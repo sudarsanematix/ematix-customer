@@ -232,10 +232,11 @@ export default function ProfileScreen() {
         {/* Account */}
         <View style={styles.optionsGroup}>
           <Text style={styles.groupTitle}>Account</Text>
-          <Row icon="account-balance-wallet" label="Wallet" sublabel="Balance & top-up" onPress={() => router.push('/wallet' as never)} />
+          <Row icon="account-balance-wallet" label="Wallet" sublabel="Balance & top-up" onPress={() => router.push('/wallet')} />
           <Row icon="credit-card" label="Payment Methods" sublabel={payments.length ? `${payments.length} linked` : 'None'} onPress={() => setSheet('payments')} />
           <Row icon="location-on" label="Saved Addresses" sublabel={`${SAVED_PLACES.length} saved`} onPress={() => setSheet('addresses')} />
-          <Row icon="notifications-none" label="Notifications" onPress={() => setSheet('notifications')} last />
+          <Row icon="notifications-none" label="Notifications" onPress={() => setSheet('notifications')} />
+          <Row icon="settings" label="Settings" sublabel="Appearance, language & more" onPress={() => router.push('/settings')} last />
         </View>
 
         {/* Safety & Support */}
@@ -440,7 +441,7 @@ export default function ProfileScreen() {
               activeOpacity={0.85}
               onPress={() => {
                 setLogoutOpen(false);
-                showToast("You've been logged out");
+                router.replace('/login');
               }}
             >
               <Text style={styles.alertDangerText}>Log Out</Text>

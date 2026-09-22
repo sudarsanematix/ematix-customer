@@ -48,7 +48,7 @@ export default function PackageDeliveredScreen() {
     setSubmitState('saving');
     setTimeout(() => {
       setSubmitState('done');
-      setTimeout(() => router.replace('/'), 1100);
+      setTimeout(() => router.replace('/(tabs)/home'), 1100);
     }, 1300);
   };
 

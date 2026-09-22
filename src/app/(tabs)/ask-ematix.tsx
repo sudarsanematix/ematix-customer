@@ -154,8 +154,8 @@ function PlanCard({
             const spot = VISIT_SPOTS.find((s: any) => s.id === stop.spotId);
             if (!spot) return null;
             // Simulated absolute positions on map for visuals
-            const top = `${30 + idx * 15}%` as any;
-            const left = `${20 + idx * 12}%` as any;
+            const top = `${30 + idx * 15}%` as `${number}%`;
+            const left = `${20 + idx * 12}%` as `${number}%`;
             return (
               <View key={'map'+stop.id} style={[styles.mapPinWrap, { top, left }]}>
                 <View style={styles.mapPinIcon}>
@@ -199,7 +199,7 @@ function PlanCard({
               <TouchableOpacity
                 style={styles.bookBtn}
                 activeOpacity={0.85}
-                onPress={() => router.push(bookRoute as never)}
+                onPress={() => router.push(bookRoute)}
               >
                 <Text style={styles.bookBtnText}>Book</Text>
               </TouchableOpacity>

@@ -1,5 +1,5 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Modal, FlatList } from 'react-native';
 import { useRouter } from 'expo-router';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type, spacing } from '../theme/typography';
@@ -15,6 +15,11 @@ export default function SharedHeader({ currentScreen = 'home', title }: SharedHe
   const styles = createStyles(colors, isDark);
 
   const router = useRouter();
+
+  const [modalVisible, setModalVisible] = useState(false);
+  const [location, setLocation] = useState('Downtown');
+  
+  const locations = ['Downtown', 'North Campus', 'South City', 'Tech Park', 'West End'];
 
   const isRootTab = ['home', 'orders', 'profile', 'ask-ematix'].includes(currentScreen);
   const displayTitle = title || currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1).replace('-', ' ');
@@ -48,10 +53,10 @@ export default function SharedHeader({ currentScreen = 'home', title }: SharedHe
           <TouchableOpacity
             style={styles.locationSelector}
             activeOpacity={0.85}
-            onPress={() => {}}
+            onPress={() => setModalVisible(true)}
           >
             <MaterialIcon name="location-on" size={18} color={colors.primary} />
-            <Text style={styles.locationText} numberOfLines={1}>Downtown</Text>
+            <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
             <MaterialIcon name="expand-more" size={16} color={colors.primary} />
           </TouchableOpacity>
         )}
@@ -67,6 +72,37 @@ export default function SharedHeader({ currentScreen = 'home', title }: SharedHe
           <MaterialIcon name="person" size={18} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
+
+      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setModalVisible(false)}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Choose Location</Text>
+              <TouchableOpacity onPress={() => setModalVisible(false)} hitSlop={10}>
+                <MaterialIcon name="close" size={24} color={colors.onSurface} />
+              </TouchableOpacity>
+            </View>
+            <FlatList 
+              data={locations}
+              keyExtractor={(item) => item}
+              renderItem={({ item }) => (
+                <TouchableOpacity 
+                  style={[styles.locationOption, location === item && styles.locationOptionSelected]}
+                  onPress={() => {
+                    setLocation(item);
+                    setModalVisible(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <MaterialIcon name="location-city" size={20} color={location === item ? colors.primary : colors.textMuted} />
+                  <Text style={[styles.locationOptionText, location === item && styles.locationOptionTextSelected]}>{item}</Text>
+                  {location === item && <MaterialIcon name="check" size={20} color={colors.primary} />}
+                </TouchableOpacity>
+              )}
+            />
+          </View>
+        </TouchableOpacity>
+      </Modal>
     </View>
   );
 }
@@ -172,5 +208,50 @@ const createStyles = (colors: any, isDark: boolean) => StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: colors.surfaceGray,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    padding: spacing.marginMobile,
+  },
+  modalContent: {
+    backgroundColor: colors.surface,
+    borderRadius: 16,
+    padding: spacing.stackLg,
+    maxHeight: '70%',
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.stackLg,
+  },
+  modalTitle: {
+    ...type.headlineSm,
+    color: colors.onSurface,
+  },
+  locationOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.stackMd,
+    paddingHorizontal: spacing.stackSm,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.surfaceContainer,
+    gap: spacing.stackSm,
+  },
+  locationOptionSelected: {
+    backgroundColor: colors.lightBlueTint,
+    borderRadius: 8,
+    borderBottomWidth: 0,
+  },
+  locationOptionText: {
+    ...type.bodyLg,
+    color: colors.onSurface,
+    flex: 1,
+  },
+  locationOptionTextSelected: {
+    color: colors.primary,
+    fontFamily: fonts.semibold,
   },
 });

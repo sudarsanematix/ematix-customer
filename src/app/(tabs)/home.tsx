@@ -11,6 +11,7 @@ import {
   Easing,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { SAVED_PLACES } from '../../data/mockData';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, type, spacing, radius } from '../../theme/typography';
 import SharedHeader from '../../components/SharedHeader';
@@ -68,6 +69,12 @@ function PulsingDot({ color, size = 8 }: { color: string; size?: number }) {
 }
 
 type PosOffset = number | `${number}%`;
+
+const HOME_PLACE_ICONS = (c: any): Record<string, { icon: any; bg: any; color: any }> => ({
+  home: { icon: 'home' as const, bg: c.lightBlueTint, color: c.primary },
+  work: { icon: 'corporate-fare' as const, bg: c.surfaceContainerHigh, color: c.onSurface },
+  default: { icon: 'sports-tennis' as const, bg: c.surfaceContainerHigh, color: c.onSurface },
+});
 
 function DriftingPin({
   top,
@@ -137,12 +144,6 @@ export default function HomeScreen() {
   const router = useRouter();
   const [isLoading, setIsLoading] = useState(true);
 
-  const SAVED_PLACES = [
-    { icon: 'home' as const, bg: colors.lightBlueTint, color: colors.primary, title: 'Home', addr: '12A Lake View Rd, Nungambakkam' },
-    { icon: 'corporate-fare' as const, bg: colors.surfaceContainerHigh, color: colors.onSurface, title: 'Tech Park Office', addr: 'Tower 4, Ramanujan IT City, Taramani' },
-    { icon: 'sports-tennis' as const, bg: colors.surfaceContainerHigh, color: colors.onSurface, title: 'Anna Nagar Club', addr: '3rd Ave, Block AA, Anna Nagar' },
-  ];
-
   useEffect(() => {
     // Simulate fetching data from backend
     const timer = setTimeout(() => setIsLoading(false), 2000);
@@ -168,7 +169,14 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <View style={styles.notifWrap}>
-            <TouchableOpacity style={styles.notifBtn} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={styles.notifBtn}
+              activeOpacity={0.85}
+              onPress={() => router.push('/notifications')}
+              accessibilityLabel="Notifications"
+              accessibilityRole="button"
+              hitSlop={8}
+            >
               <MaterialIcon name="notifications" size={20} color={colors.onSurface} />
             </TouchableOpacity>
             <View style={styles.notifDot} />
@@ -219,7 +227,7 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.actionTitle}>Book a Ride</Text>
             <Text style={styles.actionDesc}>Autos & Cabs with guaranteed upfront fares</Text>
-            <TouchableOpacity style={[styles.actionBtn, styles.rideBtn]} activeOpacity={0.85} onPress={() => router.push('/destination-search' as never)}>
+            <TouchableOpacity style={[styles.actionBtn, styles.rideBtn]} activeOpacity={0.85} onPress={() => router.push('/choose-vehicle')}>
               <Text style={styles.rideBtnText}>Ride Now</Text>
               <MaterialIcon name="arrow-forward" size={16} color={colors.onPrimary} />
             </TouchableOpacity>
@@ -237,7 +245,7 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.actionTitle}>Send Parcel</Text>
             <Text style={styles.actionDesc}>Instant delivery via Two-wheelers & Autos</Text>
-            <TouchableOpacity style={[styles.actionBtn, styles.sendBtn]} activeOpacity={0.85} onPress={() => router.push('/package-details' as never)}>
+            <TouchableOpacity style={[styles.actionBtn, styles.sendBtn]} activeOpacity={0.85} onPress={() => router.push('/package-details')}>
               <Text style={styles.sendBtnText}>Send Now</Text>
               <MaterialIcon name="send" size={16} color={colors.primary} />
             </TouchableOpacity>
@@ -347,15 +355,17 @@ export default function HomeScreen() {
                     <Skeleton width={70} height={36} radius={8} />
                   </View>
                 ))
-              : SAVED_PLACES.map((p) => (
+              : SAVED_PLACES.map((p: any) => {
+                  const placeCfg = HOME_PLACE_ICONS(colors)[p.tagType] || HOME_PLACE_ICONS(colors).default;
+                  return (
                   <TouchableOpacity key={p.title} style={styles.recentCard} activeOpacity={0.9}>
                     <View style={styles.recentCardLeft}>
-                      <View style={[styles.recentIconWrap, { backgroundColor: p.bg }]}>
-                        <MaterialIcon name={p.icon} size={22} color={p.color} />
+                      <View style={[styles.recentIconWrap, { backgroundColor: placeCfg.bg }]}>
+                        <MaterialIcon name={placeCfg.icon} size={22} color={placeCfg.color} />
                       </View>
                       <View style={styles.recentTextWrap}>
                         <Text style={styles.recentTitle} numberOfLines={1}>{p.title}</Text>
-                        <Text style={styles.recentAddr} numberOfLines={1}>{p.addr}</Text>
+                        <Text style={styles.recentAddr} numberOfLines={1}>{p.subtitle}</Text>
                       </View>
                     </View>
                     <TouchableOpacity style={styles.rebookBtn} activeOpacity={0.85}>
@@ -363,7 +373,8 @@ export default function HomeScreen() {
                       <MaterialIcon name="chevron-right" size={16} color={colors.primary} />
                     </TouchableOpacity>
                   </TouchableOpacity>
-                ))}
+                  );
+                })}
           </View>
         </View>
 

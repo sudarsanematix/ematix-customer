@@ -11,9 +11,9 @@ export default function SplashScreen() {
   const [dot3] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    // Navigate to home after 3 seconds
+    // Navigate to login after 3 seconds
     const timer = setTimeout(() => {
-      router.replace('/(tabs)/home' as any);
+      router.replace('/login');
     }, 3000);
 
     // Setup bounce animation

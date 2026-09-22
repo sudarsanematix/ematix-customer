@@ -176,7 +176,7 @@ export default function FindingDriverScreen() {
             <MapIconPing top="28%" right="32%" kind="rickshaw" />
 
             {/* Recenter Button */}
-            <TouchableOpacity style={styles.recenterBtn} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.recenterBtn} activeOpacity={0.7} accessibilityLabel="Recenter map" accessibilityRole="button" hitSlop={8}>
               <MaterialIcon name="my-location" size={20} color={colors.onSurface} />
             </TouchableOpacity>
           </RealMap>
@@ -270,7 +270,7 @@ export default function FindingDriverScreen() {
       </ScrollView>
 
       {/* Cancel Modal */}
-      <Modal visible={showCancelModal} transparent animationType="fade">
+      <Modal visible={showCancelModal} transparent animationType="fade" onRequestClose={() => setShowCancelModal(false)}>
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
             <View style={styles.modalHeader}>

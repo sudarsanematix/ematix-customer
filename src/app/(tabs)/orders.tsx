@@ -4,6 +4,7 @@ import { useRouter } from 'expo-router';
 import { PAST_ORDERS } from '../../data/mockData';
 import SharedHeader from '../../components/SharedHeader';
 import Skeleton from '../../components/Skeleton';
+import MaterialIcon from '../../components/MaterialIcon';
 import { useTheme } from '../../theme/ThemeProvider';
 
 export default function OrdersScreen() {
@@ -77,6 +78,12 @@ export default function OrdersScreen() {
                 </View>
               </View>
             ))
+          ) : filteredOrders.length === 0 ? (
+            <View style={styles.emptyState}>
+              <MaterialIcon name="receipt-long" size={48} color={colors.outlineVariant} />
+              <Text style={styles.emptyTitle}>No {filter === 'rides' ? 'rides' : filter === 'deliveries' ? 'deliveries' : 'orders'} yet</Text>
+              <Text style={styles.emptySubtitle}>Your past trips and deliveries will show up here.</Text>
+            </View>
           ) : (
             filteredOrders.map((order: any) => (
             <View key={order.id} style={styles.card}>
@@ -107,11 +114,11 @@ export default function OrdersScreen() {
               {/* Waypoints */}
               <View style={styles.waypointsBox}>
                 <View style={styles.waypointRow}>
-                  <View style={[styles.dot, { backgroundColor: '#0033b1' }]} />
+                  <View style={[styles.dot, { backgroundColor: colors.primary }]} />
                   <Text style={styles.waypointText} numberOfLines={1}>{order.pickup}</Text>
                 </View>
                 <View style={styles.waypointRow}>
-                  <View style={[styles.dot, { backgroundColor: '#C52A2E' }]} />
+                  <View style={[styles.dot, { backgroundColor: colors.accentRed }]} />
                   <Text style={styles.waypointText} numberOfLines={1}>{order.dropoff}</Text>
                 </View>
               </View>
@@ -125,18 +132,15 @@ export default function OrdersScreen() {
                 <View style={styles.buttonsRow}>
                   <TouchableOpacity
                     style={styles.btnSecondary}
-                    onPress={() => {
-                      if (order.type === 'ride') router.push('/ride-completed' as any);
-                    else router.push('/package-delivered' as any);
-                    }}
+                    onPress={() => router.push({ pathname: '/receipt', params: { id: order.id } })}
                   >
                     <Text style={styles.btnSecondaryText}>View Receipt</Text>
                   </TouchableOpacity>
                   <TouchableOpacity
                     style={styles.btnPrimary}
                     onPress={() => {
-                      if (order.type === 'ride') router.push('/select-ride' as any);
-                    else router.push('/package-details' as any);
+                      if (order.type === 'ride') router.push('/select-ride');
+                    else router.push('/package-details');
                     }}
                   >
                     <Text style={styles.btnPrimaryText}>Rebook</Text>
@@ -153,31 +157,31 @@ export default function OrdersScreen() {
 }
 
 const createStyles = (colors: any) => StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F9FAFB' },
+  container: { flex: 1, backgroundColor: colors.surface },
   contentContainer: { padding: 16, paddingBottom: 100 },
   header: { marginBottom: 16 },
-  title: { fontSize: 18, fontWeight: 'bold', color: '#1c1b1b' },
-  subtitle: { fontSize: 12, color: '#666' },
+  title: { fontSize: 18, fontWeight: 'bold', color: colors.onSurface },
+  subtitle: { fontSize: 12, color: colors.textMuted },
   filterTabs: {
     flexDirection: 'row',
-    backgroundColor: '#F6F7F9',
+    backgroundColor: colors.surfaceGray,
     borderRadius: 16,
     padding: 4,
     borderWidth: 1,
-    borderColor: '#f0edec',
+    borderColor: colors.outlineVariant,
     marginBottom: 16,
   },
   tab: { flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 12 },
-  tabActive: { backgroundColor: '#ffffff', shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
-  tabText: { fontSize: 12, fontWeight: 'bold', color: '#666' },
-  tabTextActive: { color: '#0033b1' },
+  tabActive: { backgroundColor: colors.surfaceContainerLowest, shadowColor: '#000', shadowOpacity: 0.05, shadowRadius: 4, elevation: 1 },
+  tabText: { fontSize: 12, fontWeight: 'bold', color: colors.textMuted },
+  tabTextActive: { color: colors.primary },
   list: { gap: 12 },
   card: {
-    backgroundColor: '#ffffff',
+    backgroundColor: colors.surfaceContainerLowest,
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: '#f0edec',
+    borderColor: colors.outlineVariant,
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
   cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -185,25 +189,25 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 12,
-    backgroundColor: '#EAF1FF',
+    backgroundColor: colors.lightBlueTint,
     justifyContent: 'center',
     alignItems: 'center',
   },
   cardIcon: { width: 32, height: 32 },
-  orderTitle: { fontSize: 12, fontWeight: 'bold', color: '#1c1b1b' },
-  orderDate: { fontSize: 11, color: '#666' },
+  orderTitle: { fontSize: 12, fontWeight: 'bold', color: colors.onSurface },
+  orderDate: { fontSize: 11, color: colors.textMuted },
   cardHeaderRight: { alignItems: 'flex-end' },
-  orderPrice: { fontSize: 14, fontWeight: 'bold', color: '#1c1b1b' },
+  orderPrice: { fontSize: 14, fontWeight: 'bold', color: colors.onSurface },
   statusBadge: {
-    backgroundColor: '#ecfdf5',
+    backgroundColor: colors.lightBlueTint,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
     marginTop: 4,
   },
-  statusText: { fontSize: 10, fontWeight: 'bold', color: '#047857' },
+  statusText: { fontSize: 10, fontWeight: 'bold', color: colors.primary },
   waypointsBox: {
-    backgroundColor: '#F6F7F9',
+    backgroundColor: colors.surfaceGray,
     borderRadius: 12,
     padding: 10,
     gap: 4,
@@ -211,31 +215,39 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   waypointRow: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  waypointText: { fontSize: 12, color: '#1c1b1b', flex: 1 },
+  waypointText: { fontSize: 12, color: colors.onSurface, flex: 1 },
   actionsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: '#f0edec',
+    borderTopColor: colors.outlineVariant,
   },
   partnerInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   partnerIcon: { fontSize: 14 },
-  partnerName: { fontSize: 11, color: '#666' },
+  partnerName: { fontSize: 11, color: colors.textMuted },
   buttonsRow: { flexDirection: 'row', gap: 8 },
   btnSecondary: {
-    backgroundColor: '#F6F7F9',
+    backgroundColor: colors.surfaceGray,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
   },
-  btnSecondaryText: { fontSize: 12, fontWeight: 'bold', color: '#0033b1' },
+  btnSecondaryText: { fontSize: 12, fontWeight: 'bold', color: colors.primary },
   btnPrimary: {
-    backgroundColor: '#0033b1',
+    backgroundColor: colors.primary,
     paddingHorizontal: 10,
     paddingVertical: 6,
     borderRadius: 8,
   },
-  btnPrimaryText: { fontSize: 12, fontWeight: 'bold', color: '#ffffff' },
+  btnPrimaryText: { fontSize: 12, fontWeight: 'bold', color: colors.onPrimary },
+  emptyState: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 48,
+    gap: 8,
+  },
+  emptyTitle: { fontSize: 16, fontWeight: 'bold', color: colors.onSurface },
+  emptySubtitle: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
 });

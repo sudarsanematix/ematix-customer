@@ -266,7 +266,7 @@ export default function RideCompletedScreen() {
 
       {/* CTA Footer */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.doneBtn} onPress={() => router.replace('/')} activeOpacity={0.95}>
+        <TouchableOpacity style={styles.doneBtn} onPress={() => router.replace('/(tabs)/home')} activeOpacity={0.95}>
           <Text style={styles.doneBtnText}>Done & Back to Home</Text>
           <MaterialIcon name="arrow-forward" size={20} color={colors.onPrimary} />
         </TouchableOpacity>
