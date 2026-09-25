@@ -1,21 +1,65 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, ScrollView, Animated } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Animated } from 'react-native';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
+import * as Linking from 'expo-linking';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import RealMap from '../components/RealMap';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts } from '../theme/typography';
 import { socketService } from '../utils/socket';
+import { useAuth } from '../context/AuthContext';
+import { telLink } from '../utils/phone';
+import { setUnread, getUnread, clearUnread } from '../utils/unread';
+
+type RideData = {
+  id: string;
+  status: string;
+  type?: string;
+  otp?: string | null;
+  vehicleType?: string;
+  pickup?: { address?: string } | null;
+  dropoff?: { address?: string } | null;
+  price?: number | string | null;
+  startedAt?: string;
+  partner?: {
+    id: string;
+    name?: string;
+    phone?: string;
+    vehicleType?: string;
+    vehicleNumber?: string;
+    vehicleModel?: string;
+    rating?: number | null;
+  } | null;
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'Waiting for partner',
+  accepted: 'Partner on the way',
+  en_route_pickup: 'Partner on the way',
+  arrived: 'Partner has arrived',
+  en_route_dropoff: 'On route to dropoff',
+  completed: 'Ride completed',
+  cancelled: 'Ride cancelled',
+};
 
 export default function ActiveRideScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { user } = useAuth();
   const { rideId } = useLocalSearchParams<{ rideId: string }>();
   const [driverOffset] = useState(() => new Animated.Value(0));
+  const [ride, setRide] = useState<RideData | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+  const [hasUnread, setHasUnread] = useState(false);
+  const [pulse] = useState(() => new Animated.Value(0));
+  const focusedRef = useRef(true);
+
+  const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] });
+  const ringOpacity = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0.6, 0] });
 
   useEffect(() => {
     const loop = Animated.loop(
@@ -33,25 +77,131 @@ export default function ActiveRideScreen() {
       ])
     );
     loop.start();
+    return () => loop.stop();
+  }, [driverOffset]);
 
+  useEffect(() => {
     socketService.connect();
-    socketService.on('ride_completed', () => {
-      console.log('Ride completed!');
-      router.replace('/ride-completed');
-    });
+    socketService.emit('join_ride', { rideId, role: 'customer', userId: user?.id });
+
+    const handleDetails = (data: RideData | null) => {
+      if (!data) {
+        setUnavailable(true);
+        return;
+      }
+      setRide(data);
+      setHasUnread(getUnread(data.id));
+      if (data.status === 'completed') {
+        router.replace(`/ride-completed?rideId=${rideId}`);
+      }
+    };
+
+    const handleCompleted = () => {
+      router.replace(`/ride-completed?rideId=${rideId}`);
+    };
+
+    const handleStatus = (data: { rideId: string; status: string }) => {
+      setRide((prev) => (prev ? { ...prev, status: data.status } : prev));
+    };
+
+    const handleStarted = (data: { rideId: string; status: string; startedAt?: string }) => {
+      setRide((prev) => (prev ? { ...prev, status: data.status, startedAt: data.startedAt } : prev));
+    };
+
+    const handleIncoming = (data: any) => {
+      if (data.rideId === rideId && data.sender === 'partner' && focusedRef.current) {
+        setUnread(rideId, true);
+        setHasUnread(true);
+        pulse.setValue(0);
+        Animated.loop(
+          Animated.sequence([
+            Animated.timing(pulse, { toValue: 1, duration: 450, useNativeDriver: true }),
+            Animated.timing(pulse, { toValue: 0, duration: 450, useNativeDriver: true }),
+          ]),
+          { iterations: 3 }
+        ).start();
+      }
+    };
+
+    const handleError = (data: { code: string; rideId?: string }) => {
+      if (data.rideId === rideId && (data.code === 'ride_not_found' || data.code === 'unauthorized')) {
+        setUnavailable(true);
+      }
+    };
+
+    socketService.on('ride_details', handleDetails);
+    socketService.on('ride_completed', handleCompleted);
+    socketService.on('ride_status_updated', handleStatus);
+    socketService.on('ride_started', handleStarted);
+    socketService.on('receive_message', handleIncoming);
+    socketService.on('ride_error', handleError);
 
     return () => {
-      loop.stop();
-      socketService.off('ride_completed');
+      socketService.off('ride_details', handleDetails);
+      socketService.off('ride_completed', handleCompleted);
+      socketService.off('ride_status_updated', handleStatus);
+      socketService.off('ride_started', handleStarted);
+      socketService.off('receive_message', handleIncoming);
+      socketService.off('ride_error', handleError);
     };
-  }, [driverOffset, router]);
+  }, [rideId, user?.id, router, pulse]);
+
+  useFocusEffect(() => {
+    focusedRef.current = true;
+    return () => {
+      focusedRef.current = false;
+    };
+  });
 
   const handleMapTap = () => {
-    router.replace('/ride-completed');
+    router.replace(`/ride-completed?rideId=${rideId}`);
   };
+
+  const callPartner = () => {
+    const url = telLink(ride?.partner?.phone);
+    if (url) Linking.openURL(url).catch(() => {});
+  };
+
+  const openChat = () => {
+    clearUnread(rideId);
+    setHasUnread(false);
+    router.push(`/chat?rideId=${rideId}`);
+  };
+
+  const initials = (ride?.partner?.name || 'Partner')
+    .split(' ')
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
+  const statusLabel = ride ? STATUS_LABELS[ride.status] || 'Ride in progress' : 'Connecting...';
+  const progress = ride
+    ? ride.status === 'pending' || ride.status === 'accepted' || ride.status === 'en_route_pickup' ? 20
+      : ride.status === 'arrived' ? 50
+      : ride.status === 'en_route_dropoff' ? 75
+      : 100
+    : 0;
 
   const markerX = driverOffset.interpolate({ inputRange: [0, 1], outputRange: [-50, -47] });
   const markerY = driverOffset.interpolate({ inputRange: [0, 1], outputRange: [-50, -48.5] });
+
+  if (unavailable) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <SharedHeader currentScreen="active-ride" title="Active Ride Tracking" />
+        <View style={styles.unavailableWrap}>
+          <MaterialIcon name="error-outline" size={48} color={colors.textMuted} />
+          <Text style={styles.unavailableTitle}>Ride not available</Text>
+          <Text style={styles.unavailableText}>This ride is no longer available or you are not authorized to view it.</Text>
+          <TouchableOpacity style={styles.unavailableBtn} onPress={() => router.replace('/(tabs)/home')}>
+            <Text style={styles.unavailableBtnText}>Back to Home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -115,7 +265,7 @@ export default function ActiveRideScreen() {
               </View>
             </Animated.View>
 
-            {/* Floating Top Arrival Status Banner */}
+            {/* Floating Top Trip Status Banner */}
             <View style={styles.statusBanner}>
               <View style={styles.statusInner}>
                 <View style={styles.statusLeft}>
@@ -125,15 +275,12 @@ export default function ActiveRideScreen() {
                   <View style={styles.statusTextCol}>
                     <View style={styles.arrivingRow}>
                       <View style={styles.arrivingPulse} />
-                      <Text style={styles.arrivingText} numberOfLines={1}>Arriving in 3 mins</Text>
+                      <Text style={styles.arrivingText} numberOfLines={1}>{statusLabel}</Text>
                     </View>
-                    <Text style={styles.distanceText} numberOfLines={1}>Driver is 450m away</Text>
+                    <Text style={styles.distanceText} numberOfLines={1}>
+                      {ride?.partner?.name ? `${ride.partner.name} · ${ride.partner.vehicleModel || 'Partner'}` : 'Connecting to your partner'}
+                    </Text>
                   </View>
-                </View>
-
-                <View style={styles.pinBadge}>
-                  <Text style={styles.pinLabel}>START PIN</Text>
-                  <Text style={styles.pinValue}>4892</Text>
                 </View>
               </View>
             </View>
@@ -150,51 +297,74 @@ export default function ActiveRideScreen() {
           <View style={styles.dragHandle} />
 
           <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetContent} nestedScrollEnabled>
-            {/* Driver & Vehicle Profile */}
+            {/* Trip Start PIN */}
+            {ride?.otp && ride.status !== 'en_route_dropoff' && ride.status !== 'completed' ? (
+              <View style={[styles.otpCard, ride?.status === 'arrived' ? styles.otpCardArrived : null]}>
+                <View style={styles.otpCardTop}>
+                  <View style={styles.otpCardIcon}>
+                    <MaterialIcon name="pin" size={18} color={colors.primary} />
+                  </View>
+                  <Text style={styles.otpCardTitle}>Trip Start PIN</Text>
+                </View>
+                <Text style={styles.otpCardDigits}>{ride.otp.split('').join('  ')}</Text>
+                <Text style={styles.otpCardHint}>
+                  {ride?.status === 'arrived'
+                    ? 'Your driver is here at pickup. Share this PIN to start the trip.'
+                    : 'Share this PIN with your driver at pickup to start the trip.'}
+                </Text>
+              </View>
+            ) : null}
+
+            {/* Partner & Vehicle Profile */}
             <View style={styles.profileCard}>
               <View style={styles.profileLeft}>
                 <View style={styles.avatarContainer}>
-                  <Image
-                    source={{ uri: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&q=80' }}
-                    style={styles.avatar}
-                  />
-                  <View style={styles.verifiedBadge}>
-                    <MaterialIcon name="check" size={10} color={colors.onPrimary} />
+                  <View style={styles.avatarInitials}>
+                    <Text style={styles.avatarInitialsText}>{initials}</Text>
                   </View>
                 </View>
                 <View style={styles.profileTextCol}>
-                  <View style={styles.nameRow}>
-                    <Text style={styles.driverName} numberOfLines={1}>Karthik Raja</Text>
-                    <MaterialIcon name="verified" size={17} color={colors.primary} />
-                  </View>
-                  <View style={styles.statsRow}>
-                    <View style={styles.ratingBadge}>
-                      <MaterialIcon name="star" size={13} color={colors.onSurface} />
-                      <Text style={styles.ratingText}>4.9</Text>
+                  <Text style={styles.driverName} numberOfLines={1}>{ride?.partner?.name || 'Partner'}</Text>
+                  {ride?.partner?.rating != null ? (
+                    <View style={styles.statsRow}>
+                      <View style={styles.ratingBadge}>
+                        <MaterialIcon name="star" size={13} color={colors.onSurface} />
+                        <Text style={styles.ratingText}>{ride.partner.rating}</Text>
+                      </View>
                     </View>
-                    <Text style={styles.tripsText} numberOfLines={1}>1,420+ trips</Text>
-                  </View>
+                  ) : (
+                    <Text style={styles.tripsText} numberOfLines={1}>
+                      {ride?.partner?.phone ? `+91 ${ride.partner.phone.replace(/\d(?=\d{4})/g, '*')}` : 'Verified partner'}
+                    </Text>
+                  )}
                 </View>
               </View>
 
-              <View style={styles.vehicleMeta}>
-                <Text style={styles.plateText}>TN 09 BK 4829</Text>
-                <Text style={styles.modelText}>Bajaj Compact Auto</Text>
-              </View>
+              {ride?.partner?.vehicleNumber || ride?.partner?.vehicleModel ? (
+                <View style={styles.vehicleMeta}>
+                  <Text style={styles.plateText}>{ride?.partner?.vehicleNumber || '—'}</Text>
+                  <Text style={styles.modelText}>{ride?.partner?.vehicleModel || 'Vehicle'}</Text>
+                </View>
+              ) : null}
             </View>
 
             {/* Quick Actions */}
             <View style={styles.actionsGrid}>
-              <TouchableOpacity style={styles.actionBtnPrimary} activeOpacity={0.9}>
+              <TouchableOpacity style={styles.actionBtnPrimary} activeOpacity={0.9} onPress={callPartner}>
                 <MaterialIcon name="call" size={20} color={colors.primary} />
                 <Text style={styles.actionLabel}>Call</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.actionBtnPrimary}
                 activeOpacity={0.9}
-                onPress={() => router.push(`/chat?rideId=${rideId || 'test_ride'}`)}
+                onPress={openChat}
               >
-                <View style={styles.unreadDot} />
+                {hasUnread && (
+                  <View style={styles.unreadDotWrap}>
+                    <Animated.View style={[styles.unreadRing, { opacity: ringOpacity, transform: [{ scale }] }]} />
+                    <Animated.View style={[styles.unreadDotInner, { transform: [{ scale }] }]} />
+                  </View>
+                )}
                 <MaterialIcon name="chat-bubble" size={20} color={colors.primary} />
                 <Text style={styles.actionLabel}>Chat</Text>
               </TouchableOpacity>
@@ -213,18 +383,15 @@ export default function ActiveRideScreen() {
               <View style={styles.journeyHeader}>
                 <View style={styles.journeyHeaderLeft}>
                   <Text style={styles.journeyTitle}>Live Journey</Text>
-                  <Text style={styles.journeyStatus}>• On Route</Text>
+                  <Text style={styles.journeyStatus}>• {statusLabel}</Text>
                 </View>
                 <View style={styles.journeyHeaderRight}>
-                  <View style={styles.etaBadge}>
-                    <Text style={styles.etaBadgeText}>ETA 06:45 PM</Text>
-                  </View>
-                  <Text style={styles.distLeftText}>4.2 km left</Text>
+                  <Text style={styles.distLeftText}>{progress === 100 ? 'Completed' : `${progress}%`}</Text>
                 </View>
               </View>
 
               <View style={styles.progressBarBg}>
-                <View style={[styles.progressBarFill, { width: '38%' }]} />
+                <View style={[styles.progressBarFill, { width: `${progress}%` }]} />
               </View>
 
               <View style={styles.waypointsRow}>
@@ -232,7 +399,7 @@ export default function ActiveRideScreen() {
                   <View style={styles.waypointDotBlue} />
                   <View style={styles.waypointText}>
                     <Text style={styles.waypointLabel}>PICKUP</Text>
-                    <Text style={styles.waypointValue} numberOfLines={1}>T. Nagar Bus Terminus</Text>
+                    <Text style={styles.waypointValue} numberOfLines={1}>{ride?.pickup?.address || 'Pickup location'}</Text>
                   </View>
                 </View>
                 <View style={styles.waypointArrowWrap}>
@@ -241,7 +408,7 @@ export default function ActiveRideScreen() {
                 <View style={[styles.waypointCol, styles.waypointColRight]}>
                   <View style={[styles.waypointText, styles.waypointTextRight]}>
                     <Text style={styles.waypointLabel}>DROPOFF</Text>
-                    <Text style={styles.waypointValue} numberOfLines={1}>Anna Nagar East 2nd Ave</Text>
+                    <Text style={styles.waypointValue} numberOfLines={1}>{ride?.dropoff?.address || 'Dropoff location'}</Text>
                   </View>
                   <View style={styles.waypointDotRed} />
                 </View>
@@ -254,11 +421,16 @@ export default function ActiveRideScreen() {
                 <View style={styles.walletIconWrapper}>
                   <MaterialIcon name="account-balance-wallet" size={16} color={colors.primary} />
                 </View>
-                <Text style={styles.paymentMethod}>Paid via UPI</Text>
-                <MaterialIcon name="check-circle" size={15} color={colors.primary} />
+                <Text style={styles.paymentMethod}>Trip Fare</Text>
               </View>
               <View style={styles.fareRight}>
-                <Text style={styles.fareAmount}>₹135</Text>
+                <Text style={styles.fareAmount}>
+                  {ride?.price != null
+                    ? typeof ride.price === 'number'
+                      ? `₹${ride.price}`
+                      : String(ride.price)
+                    : '—'}
+                </Text>
                 <Text style={styles.fareLabel}>Total Fare</Text>
               </View>
             </View>
@@ -417,33 +589,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     lineHeight: 16,
     color: colors.textMuted,
   },
-  pinBadge: {
-    backgroundColor: colors.primaryContainer,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-    alignItems: 'flex-end',
-    flexShrink: 0,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 3,
-    elevation: 2,
-  },
-  pinLabel: {
-    fontFamily: fonts.semibold,
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 0.22,
-    color: colors.onPrimaryContainer,
-  },
-  pinValue: {
-    fontFamily: fonts.semibold,
-    fontSize: 17,
-    lineHeight: 22,
-    color: colors.onPrimary,
-    letterSpacing: 1,
-  },
   recenterBtn: {
     position: 'absolute',
     bottom: 12,
@@ -486,6 +631,49 @@ const createStyles = (colors: any) => StyleSheet.create({
     gap: 16,
     paddingBottom: 8,
   },
+  otpCard: {
+    backgroundColor: colors.lightBlueTint,
+    borderRadius: 16,
+    padding: 14,
+    gap: 6,
+  },
+  otpCardArrived: {
+    backgroundColor: colors.primaryContainer,
+  },
+  otpCardTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  otpCardIcon: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: colors.surfaceContainerLowest,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  otpCardTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.5,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  otpCardDigits: {
+    fontFamily: fonts.bold,
+    fontSize: 26,
+    lineHeight: 32,
+    letterSpacing: 6,
+    color: colors.onSurface,
+  },
+  otpCardHint: {
+    fontFamily: fonts.regular,
+    fontSize: 12,
+    lineHeight: 16,
+    color: colors.onSurfaceVariant,
+  },
   profileCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -508,31 +696,22 @@ const createStyles = (colors: any) => StyleSheet.create({
     height: 48,
     flexShrink: 0,
   },
-  avatar: {
+  avatarInitials: {
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.surfaceContainer,
-  },
-  verifiedBadge: {
-    position: 'absolute',
-    bottom: 0,
-    right: 0,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
-    backgroundColor: colors.secondaryContainer,
+    backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  avatarInitialsText: {
+    fontFamily: fonts.bold,
+    fontSize: 18,
+    color: colors.onPrimary,
   },
   profileTextCol: {
     flex: 1,
     minWidth: 0,
-  },
-  nameRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
   },
   driverName: {
     fontFamily: fonts.semibold,
@@ -618,13 +797,26 @@ const createStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
     gap: 4,
   },
-  unreadDot: {
+  unreadDotWrap: {
     position: 'absolute',
     top: 8,
-    right: 20,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    right: 18,
+    width: 16,
+    height: 16,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  unreadRing: {
+    position: 'absolute',
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: colors.accentRed,
+  },
+  unreadDotInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: colors.accentRed,
   },
   actionLabel: {
@@ -680,19 +872,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-  },
-  etaBadge: {
-    backgroundColor: colors.lightBlueTint,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    borderRadius: 999,
-  },
-  etaBadgeText: {
-    fontFamily: fonts.semibold,
-    fontSize: 11,
-    lineHeight: 14,
-    letterSpacing: 0.22,
-    color: colors.primary,
   },
   distLeftText: {
     fontFamily: fonts.semibold,
@@ -829,5 +1008,39 @@ const createStyles = (colors: any) => StyleSheet.create({
     lineHeight: 14,
     letterSpacing: 0.22,
     color: colors.textMuted,
+  },
+  unavailableWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    gap: 12,
+  },
+  unavailableTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 18,
+    lineHeight: 24,
+    color: colors.onSurface,
+    textAlign: 'center',
+  },
+  unavailableText: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  unavailableBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 14,
+    marginTop: 8,
+  },
+  unavailableBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.onPrimary,
   },
 });

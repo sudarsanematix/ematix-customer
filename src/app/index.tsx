@@ -1,128 +1,105 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Image } from 'react-native';
+import { View, Text, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
+import { LinearGradient } from 'expo-linear-gradient';
+import MaterialIcon from '../components/MaterialIcon';
 
 export default function SplashScreen() {
   const router = useRouter();
-  
-  // Animation values for the dots
-  const [dot1] = useState(() => new Animated.Value(0));
-  const [dot2] = useState(() => new Animated.Value(0));
-  const [dot3] = useState(() => new Animated.Value(0));
+  const [scaleAnim] = useState(() => new Animated.Value(0.9));
+  const [opacityAnim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
-    // Navigate to login after 3 seconds
+    Animated.parallel([
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 20,
+        friction: 7,
+        useNativeDriver: true,
+      }),
+      Animated.timing(opacityAnim, {
+        toValue: 1,
+        duration: 800,
+        useNativeDriver: true,
+      })
+    ]).start();
+
+    // Navigate to login after 2.5 seconds
     const timer = setTimeout(() => {
       router.replace('/login');
-    }, 3000);
-
-    // Setup bounce animation
-    const animateDot = (dot: any, delay: number) => {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(dot, {
-            toValue: -10,
-            duration: 300,
-            delay,
-            useNativeDriver: true,
-          }),
-          Animated.timing(dot, {
-            toValue: 0,
-            duration: 300,
-            useNativeDriver: true,
-          }),
-        ])
-      ).start();
-    };
-
-    animateDot(dot1, 0);
-    animateDot(dot2, 150);
-    animateDot(dot3, 300);
+    }, 2500);
 
     return () => clearTimeout(timer);
-  }, [router, dot1, dot2, dot3]);
+  }, [scaleAnim, opacityAnim]);
 
   return (
-    <View style={styles.container}>
-      <View style={styles.content}>
-        {/* Branding / Logo */}
-        <View style={styles.logoContainer}>
-          <Image 
-            source={{ uri: 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Automobile/3D/automobile_3d.png' }} 
-            style={styles.logoImage} 
-          />
+    <LinearGradient
+      colors={['#00217c', '#000b29']}
+      style={styles.container}
+    >
+      <Animated.View style={[styles.content, { opacity: opacityAnim, transform: [{ scale: scaleAnim }] }]}>
+        <View style={styles.logoWrap}>
+          <View style={styles.logoInner}>
+            <MaterialIcon name="bolt" size={56} color="#00217c" />
+          </View>
+          <View style={styles.glow} />
         </View>
         
-        {/* App Title */}
-        <View style={styles.titleContainer}>
-          <Text style={styles.title}>Ematix</Text>
-          <Text style={styles.subtitle}>RIDE AND DELIVERY</Text>
-        </View>
-
-        {/* Loading Indicator */}
-        <View style={styles.loaderContainer}>
-          <Animated.View style={[styles.dot, { transform: [{ translateY: dot1 }] }]} />
-          <Animated.View style={[styles.dot, { transform: [{ translateY: dot2 }] }]} />
-          <Animated.View style={[styles.dot, { transform: [{ translateY: dot3 }] }]} />
-        </View>
-      </View>
-    </View>
+        <Text style={styles.title}>EMATIX</Text>
+        <Text style={styles.subtitle}>QUICK & SAFE DELIVERY</Text>
+      </Animated.View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#00174b',
     justifyContent: 'center',
     alignItems: 'center',
   },
   content: {
     alignItems: 'center',
   },
-  logoContainer: {
-    width: 96,
-    height: 96,
-    backgroundColor: '#ffffff',
-    borderRadius: 24,
+  logoWrap: {
+    position: 'relative',
+    marginBottom: 40,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.3,
-    shadowRadius: 20,
-    elevation: 10,
-    marginBottom: 24,
   },
-  logoImage: {
-    width: 64,
-    height: 64,
-  },
-  titleContainer: {
+  logoInner: {
+    width: 104,
+    height: 104,
+    borderRadius: 36,
+    backgroundColor: '#ffffff',
+    justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 32,
+    zIndex: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 12,
+  },
+  glow: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    zIndex: 1,
   },
   title: {
-    fontSize: 32,
+    fontSize: 38,
     fontWeight: '900',
     color: '#ffffff',
-    letterSpacing: -1,
+    letterSpacing: 6,
+    marginBottom: 8,
   },
   subtitle: {
-    fontSize: 14,
-    fontWeight: '600',
+    fontSize: 13,
+    fontWeight: '700',
     color: '#809ffe',
-    letterSpacing: 2,
-    marginTop: 8,
-  },
-  loaderContainer: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  dot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#ffffff',
+    letterSpacing: 4,
   },
 });

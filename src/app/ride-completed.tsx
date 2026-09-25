@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView, Image } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, SafeAreaView } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts } from '../theme/typography';
+
+const API_BASE = 'http://192.168.1.34:4000';
 
 const COMPLIMENTS = [
   { id: 'Smooth Driving', icon: '🌟' },
@@ -21,16 +23,93 @@ const RATING_PHRASES = [
   'Exceptional Service! 5.0',
 ];
 
+type CompletedRide = {
+  id: string;
+  type?: string;
+  vehicleType?: string;
+  pickup?: { address: string } | null;
+  dropoff?: { address: string } | null;
+  price?: number | string | null;
+  status?: string;
+  createdAt?: string;
+  acceptedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  customer?: { name?: string } | null;
+  partner?: {
+    name?: string;
+    phone?: string;
+    rating?: number | null;
+    vehicleType?: string;
+    vehicleNumber?: string;
+    vehicleModel?: string;
+  } | null;
+};
+
+function formatFare(price?: number | string | null): string {
+  if (price == null) return '—';
+  if (typeof price === 'number') return `₹${price}`;
+  const str = String(price).trim();
+  if (/^[₹$€£]/.test(str)) return str;
+  return `₹${str}`;
+}
+
+function fmtTime(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtDate(iso?: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
+
+function tripMinutes(startIso?: string | null, endIso?: string | null): number | null {
+  if (!startIso || !endIso) return null;
+  const d = Math.round((new Date(endIso).getTime() - new Date(startIso).getTime()) / 60000);
+  return Number.isFinite(d) && d >= 0 ? d : null;
+}
+
+function initialsOf(name?: string | null): string {
+  if (!name) return 'P';
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => (w[0] ? w[0].toUpperCase() : ''))
+      .join('') || 'P'
+  );
+}
+
 export default function RideCompletedScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { rideId } = useLocalSearchParams<{ rideId: string }>();
+  const [ride, setRide] = useState<CompletedRide | null>(null);
   const [rating, setRating] = useState(5);
   const [activeCompliments, setActiveCompliments] = useState<string[]>(['Smooth Driving']);
-  const [tip, setTip] = useState(20);
+  const [tip, setTip] = useState(0);
 
-  const baseTotal = 110;
-  const finalTotal = baseTotal + tip;
+  useEffect(() => {
+    if (!rideId) return;
+    fetch(`${API_BASE}/api/rides/${rideId}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => setRide(data || null))
+      .catch(() => setRide(null));
+  }, [rideId]);
+
+  const partner = ride?.partner;
+  const firstName = partner?.name?.trim().split(/\s+/)[0] || 'your driver';
+  const fare = formatFare(ride?.price);
+  const totalDisplay =
+    typeof ride?.price === 'number' ? `₹${ride.price + tip}` : tip > 0 ? `${fare} + ₹${tip}` : fare;
+  const minutes = tripMinutes(ride?.startedAt, ride?.completedAt);
 
   const toggleCompliment = (comp: string) => {
     setActiveCompliments((prev) =>
@@ -55,7 +134,11 @@ export default function RideCompletedScreen() {
             <View style={styles.sparkleBottom} />
           </View>
           <Text style={styles.celebrationTitle}>Ride Completed!</Text>
-          <Text style={styles.celebrationSubtitle}>Today at 05:42 PM • Dropped off safely</Text>
+          <Text style={styles.celebrationSubtitle}>
+            {ride?.completedAt
+              ? `${fmtDate(ride.completedAt)} at ${fmtTime(ride.completedAt)} • Dropped off safely`
+              : 'Dropped off safely'}
+          </Text>
         </View>
 
         {/* Trip Summary Card */}
@@ -63,20 +146,23 @@ export default function RideCompletedScreen() {
           <View style={styles.driverRow}>
             <View style={styles.driverLeft}>
               <View style={styles.avatarWrap}>
-                <Image
-                  source={{ uri: 'https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=200&q=80' }}
-                  style={styles.avatar}
-                />
+                <View style={styles.avatarInitials}>
+                  <Text style={styles.avatarInitialsText}>{initialsOf(partner?.name)}</Text>
+                </View>
               </View>
               <View style={styles.driverInfo}>
                 <View style={styles.nameRow}>
-                  <Text style={styles.driverName} numberOfLines={1}>Karthik Raja</Text>
-                  <View style={styles.ratingBadge}>
-                    <MaterialIcon name="star" size={14} color="#FFB800" />
-                    <Text style={styles.ratingText}>4.9</Text>
-                  </View>
+                  <Text style={styles.driverName} numberOfLines={1}>{partner?.name || 'Your driver'}</Text>
+                  {partner?.rating != null && (
+                    <View style={styles.ratingBadge}>
+                      <MaterialIcon name="star" size={14} color="#FFB800" />
+                      <Text style={styles.ratingText}>{partner.rating}</Text>
+                    </View>
+                  )}
                 </View>
-                <Text style={styles.vehicleText} numberOfLines={1}>Bajaj Compact Auto • TN 09 BK 4829</Text>
+                <Text style={styles.vehicleText} numberOfLines={1}>
+                  {partner ? [partner.vehicleModel, partner.vehicleNumber].filter(Boolean).join(' • ') : 'Vehicle'}
+                </Text>
               </View>
             </View>
             <View style={styles.verifiedIconWrapper}>
@@ -92,12 +178,12 @@ export default function RideCompletedScreen() {
             </View>
             <View style={styles.routeTextCol}>
               <View>
-                <Text style={styles.routeLocation} numberOfLines={1}>Anna Salai, T. Nagar</Text>
-                <Text style={styles.routeTime}>Picked up at 05:14 PM</Text>
+                <Text style={styles.routeLocation} numberOfLines={1}>{ride?.pickup?.address || 'Pickup location'}</Text>
+                <Text style={styles.routeTime}>Picked up at {fmtTime(ride?.startedAt) || fmtTime(ride?.acceptedAt) || '—'}</Text>
               </View>
               <View style={styles.routeSecondPoint}>
-                <Text style={styles.routeLocation} numberOfLines={1}>Marina Bay, Kamarajar Salai</Text>
-                <Text style={styles.routeTime}>Completed at 05:42 PM</Text>
+                <Text style={styles.routeLocation} numberOfLines={1}>{ride?.dropoff?.address || 'Dropoff location'}</Text>
+                <Text style={styles.routeTime}>Completed at {fmtTime(ride?.completedAt) || '—'}</Text>
               </View>
             </View>
           </View>
@@ -109,16 +195,16 @@ export default function RideCompletedScreen() {
               </View>
               <View>
                 <Text style={styles.statLabel}>Duration</Text>
-                <Text style={styles.statValue}>28 mins</Text>
+                <Text style={styles.statValue}>{minutes != null ? `${minutes} mins` : '—'}</Text>
               </View>
             </View>
             <View style={styles.statBox}>
               <View style={styles.statIconWrapper}>
-                <MaterialIcon name="route" size={18} color={colors.primary} />
+                <MaterialIcon name="directions-car" size={18} color={colors.primary} />
               </View>
               <View>
-                <Text style={styles.statLabel}>Distance</Text>
-                <Text style={styles.statValue}>8.4 km</Text>
+                <Text style={styles.statLabel}>Vehicle</Text>
+                <Text style={styles.statValue} numberOfLines={1}>{ride?.vehicleType || 'Ride'}</Text>
               </View>
             </View>
           </View>
@@ -136,28 +222,13 @@ export default function RideCompletedScreen() {
 
           <View style={styles.receiptLines}>
             <View style={styles.receiptLine}>
-              <Text style={styles.receiptLabel}>Base Fare</Text>
-              <Text style={styles.receiptValue}>₹50.00</Text>
-            </View>
-            <View style={styles.receiptLine}>
-              <Text style={styles.receiptLabel}>Distance Fare (8.4 km)</Text>
-              <Text style={styles.receiptValue}>₹65.00</Text>
-            </View>
-            <View style={styles.receiptLine}>
-              <Text style={styles.receiptLabel}>Time & Traffic Surcharge</Text>
-              <Text style={styles.receiptValue}>₹20.00</Text>
-            </View>
-            <View style={styles.receiptLine}>
-              <View style={styles.couponLabelRow}>
-                <Text style={styles.receiptLabelDiscount}>Coupon (EMATIX50)</Text>
-                <MaterialIcon name="sell" size={16} color={colors.accentRed} />
-              </View>
-              <Text style={styles.receiptValueDiscount}>-₹25.00</Text>
+              <Text style={styles.receiptLabel}>Total Fare</Text>
+              <Text style={styles.receiptValue}>{fare}</Text>
             </View>
             {tip > 0 && (
               <View style={styles.tipReceiptRow}>
                 <Text style={styles.tipReceiptLabel}>Driver Tip</Text>
-                <Text style={styles.tipReceiptValue}>₹{tip.toFixed(2)}</Text>
+                <Text style={styles.tipReceiptValue}>+₹{tip}</Text>
               </View>
             )}
           </View>
@@ -167,17 +238,17 @@ export default function RideCompletedScreen() {
               <Text style={styles.totalLabel}>TOTAL PAID</Text>
               <View style={styles.paymentMethodRow}>
                 <View style={styles.paymentDot} />
-                <Text style={styles.paymentMethodText}>Google Pay UPI</Text>
+                <Text style={styles.paymentMethodText}>Online Payment</Text>
               </View>
             </View>
-            <Text style={styles.totalValue}>₹{finalTotal.toFixed(2)}</Text>
+            <Text style={styles.totalValue}>{totalDisplay}</Text>
           </View>
         </View>
 
         {/* Rating & Feedback Card */}
         <View style={styles.card}>
           <View style={styles.centerHeader}>
-            <Text style={styles.cardTitle}>How was your trip with Karthik?</Text>
+            <Text style={styles.cardTitle}>How was your trip with {firstName}?</Text>
             <Text style={styles.cardSubtitle}>Your rating helps build a trusted Ematix community</Text>
           </View>
 
@@ -218,7 +289,7 @@ export default function RideCompletedScreen() {
 
           <View style={styles.tippingSection}>
             <View style={styles.tipHeader}>
-              <Text style={styles.sectionLabel}>Add a tip for Karthik</Text>
+              <Text style={styles.sectionLabel}>Add a tip for {firstName}</Text>
               <View style={styles.tipBadge}>
                 <Text style={styles.tipBadgeText}>100% goes to driver</Text>
               </View>
@@ -384,12 +455,23 @@ const createStyles = (colors: any) => StyleSheet.create({
     height: 44,
     borderRadius: 22,
     backgroundColor: colors.surfaceContainerHigh,
-    overflow: 'hidden',
+    justifyContent: 'center',
+    alignItems: 'center',
     flexShrink: 0,
   },
-  avatar: {
-    width: 44,
-    height: 44,
+  avatarInitials: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: colors.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitialsText: {
+    fontFamily: fonts.bold,
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.onPrimary,
   },
   driverInfo: {
     flex: 1,
@@ -567,23 +649,6 @@ const createStyles = (colors: any) => StyleSheet.create({
     fontSize: 13,
     lineHeight: 18,
     color: colors.onSurface,
-  },
-  couponLabelRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  receiptLabelDiscount: {
-    fontFamily: fonts.medium,
-    fontSize: 14,
-    lineHeight: 20,
-    color: colors.accentRed,
-  },
-  receiptValueDiscount: {
-    fontFamily: fonts.semibold,
-    fontSize: 13,
-    lineHeight: 18,
-    color: colors.accentRed,
   },
   tipReceiptRow: {
     flexDirection: 'row',

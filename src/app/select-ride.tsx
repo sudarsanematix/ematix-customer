@@ -21,6 +21,7 @@ import RealMap from '../components/RealMap';
 import DraggableSheet from '../components/DraggableSheet';
 import SwipeButton from '../components/SwipeButton';
 import { socketService } from '../utils/socket';
+import { useAuth } from '../context/AuthContext';
 
 const RIDE_OPTIONS = [
   {
@@ -102,11 +103,45 @@ export default function SelectRideScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { user } = useAuth();
   const { vehicle } = useLocalSearchParams();
+  const pendingRideRef = useRef<((data: any) => void) | null>(null);
 
   // Find the selected vehicle, default to car if not provided
   const selectedVehicleType = vehicle || 'car';
   const selectedRide = RIDE_OPTIONS.find((r) => r.id === selectedVehicleType) || RIDE_OPTIONS[0];
+
+  useEffect(() => {
+    socketService.connect();
+    const onRideRequested = (data: any) => {
+      if (pendingRideRef.current) {
+        pendingRideRef.current(data);
+        pendingRideRef.current = null;
+      }
+    };
+    socketService.on('ride_requested', onRideRequested);
+    return () => socketService.off('ride_requested', onRideRequested);
+  }, []);
+
+  const requestRide = () => {
+    socketService.emit('request_ride', {
+      type: 'ride',
+      customerId: user?.id,
+      vehicle: selectedRide.name,
+      price: selectedRide.price,
+      pickup: '1400 Ocean St, Santa Cruz',
+      dropoff: '2221 S Havana St, Aurora',
+      eta: selectedRide.time,
+    });
+
+    // Fallback if the ack is somehow missed: navigate without an id and let
+    // finding-driver recover via ride_accepted/join_ride.
+    const fallback = setTimeout(() => router.push('/finding-driver'), 8000);
+    pendingRideRef.current = (data: any) => {
+      clearTimeout(fallback);
+      router.push(`/finding-driver?rideId=${data?.id ? String(data.id) : ''}`);
+    };
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -167,13 +202,13 @@ export default function SelectRideScreen() {
 
       {/* Bottom Sheet UI */}
       <View style={styles.bottomSheetWrapper}>
-        
+
         {/* Fake White Background that starts lower down */}
         <View style={styles.sheetBackground} />
 
         {/* Single Vehicle View */}
         <View style={styles.singleVehicleView}>
-          
+
           {/* Overlapping Vehicle Image */}
           <Image source={selectedRide.image} style={styles.vehicleImage} resizeMode="contain" />
 
@@ -229,17 +264,7 @@ export default function SelectRideScreen() {
         <View style={styles.swipeWrap}>
           <SwipeButton
             title="Slide To Send Request"
-            onSwipeComplete={() => {
-              socketService.emit('request_ride', {
-                type: 'ride',
-                vehicle: selectedRide.name,
-                price: selectedRide.price,
-                pickup: '1400 Ocean St, Santa Cruz',
-                dropoff: '2221 S Havana St, Aurora',
-                eta: selectedRide.time
-              });
-              router.push('/finding-driver');
-            }}
+            onSwipeComplete={requestRide}
           />
         </View>
 

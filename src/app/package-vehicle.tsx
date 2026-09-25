@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, SafeAreaView } from 'react-native';
 import { useRouter } from 'expo-router';
 import SharedHeader from '../components/SharedHeader';
@@ -8,6 +8,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { fonts } from '../theme/typography';
 import { Image } from 'react-native';
 import { socketService } from '../utils/socket';
+import { useAuth } from '../context/AuthContext';
 
 const INSTRUCTION_CHIPS = ['+ Ring bell twice', '+ Leave at gate', '+ Call receiver'];
 
@@ -15,8 +16,43 @@ export default function PackageVehicleScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { user } = useAuth();
   const [selectedVehicle, setSelectedVehicle] = useState('two-wheeler');
   const [notes, setNotes] = useState('');
+  const pendingRideRef = useRef<((data: any) => void) | null>(null);
+
+  useEffect(() => {
+    socketService.connect();
+    const onRideRequested = (data: any) => {
+      if (pendingRideRef.current) {
+        pendingRideRef.current(data);
+        pendingRideRef.current = null;
+      }
+    };
+    socketService.on('ride_requested', onRideRequested);
+    return () => socketService.off('ride_requested', onRideRequested);
+  }, []);
+
+  const requestParcel = () => {
+    socketService.emit('request_ride', {
+      type: 'parcel',
+      customerId: user?.id,
+      vehicle: vehicle.name,
+      price: vehicle.price,
+      pickup: 'Greenways Road, RA Puram',
+      dropoff: '12th Cross St, Indiranagar',
+      eta: vehicle.eta,
+    });
+
+    // Navigate only once the backend returns the real ride id + PIN.
+    const fallback = setTimeout(() => router.push('/package-assigned'), 8000);
+    pendingRideRef.current = (data: any) => {
+      clearTimeout(fallback);
+      const id = data?.id ? String(data.id) : '';
+      const otp = data?.otp ? String(data.otp) : '';
+      router.push(`/package-assigned?rideId=${id}&otp=${otp}`);
+    };
+  };
 
   const vehicle = PARCEL_VEHICLES.find((v: any) => v.id === selectedVehicle) || PARCEL_VEHICLES[0];
   const isTwoWheeler = selectedVehicle === 'two-wheeler';
@@ -222,17 +258,7 @@ export default function PackageVehicleScreen() {
         <TouchableOpacity
           style={styles.ctaBtn}
           activeOpacity={0.95}
-          onPress={() => {
-            socketService.emit('request_ride', {
-              type: 'parcel',
-              vehicle: vehicle.name,
-              price: vehicle.price,
-              pickup: 'Greenways Road, RA Puram',
-              dropoff: '12th Cross St, Indiranagar',
-              eta: vehicle.eta
-            });
-            router.push('/package-assigned');
-          }}
+          onPress={requestParcel}
         >
           <Text style={styles.ctaText}>Continue to Delivery Summary — ₹{vehicle.price}</Text>
           <MaterialIcon name="arrow-forward" size={20} color={colors.onPrimary} />

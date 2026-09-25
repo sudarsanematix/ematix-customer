@@ -64,7 +64,7 @@ export const RIDE_VEHICLES = [
     dropTime: '05:42 PM',
     price: 135,
     originalPrice: 160,
-    image: 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Auto%20rickshaw/3D/auto_rickshaw_3d.png',
+    image: require('../../assets/images/auto.png'),
   },
   {
     id: 'car',
@@ -76,7 +76,7 @@ export const RIDE_VEHICLES = [
     dropTime: '05:48 PM',
     price: 260,
     originalPrice: 285,
-    image: 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Automobile/3D/automobile_3d.png',
+    image: require('../../assets/images/car.png'),
   },
 ];
 
@@ -90,7 +90,7 @@ export const PARCEL_VEHICLES = [
     price: 79,
     baseFare: 40,
     distanceCharge: 39,
-    image: 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Motor%20scooter/3D/motor_scooter_3d.png',
+    image: require('../../assets/images/bike.png'),
   },
   {
     id: 'auto',
@@ -101,7 +101,7 @@ export const PARCEL_VEHICLES = [
     price: 155,
     baseFare: 80,
     distanceCharge: 75,
-    image: 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Auto%20rickshaw/3D/auto_rickshaw_3d.png',
+    image: require('../../assets/images/auto.png'),
   },
 ];
 
@@ -112,7 +112,7 @@ export const DELIVERY_VEHICLES = [
     subtitle: 'Fastest delivery for light parcels',
     price: 79,
     eta: '12 mins',
-    image: 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Motor%20scooter/3D/motor_scooter_3d.png',
+    image: require('../../assets/images/bike.png'),
   },
   {
     id: 'auto',
@@ -120,7 +120,7 @@ export const DELIVERY_VEHICLES = [
     subtitle: 'Bulky boxes or heavy items',
     price: 155,
     eta: '18 mins',
-    image: 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Auto%20rickshaw/3D/auto_rickshaw_3d.png',
+    image: require('../../assets/images/auto.png'),
   },
 ];
 

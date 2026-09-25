@@ -7,6 +7,8 @@ const SOCKET_URL = 'http://192.168.1.34:4000';
 class SocketService {
   public socket: Socket | null = null;
 
+  private lastJoin: { rideId: string; role: string; userId?: string } | null = null;
+
   connect() {
     if (!this.socket) {
       this.socket = io(SOCKET_URL, {
@@ -15,6 +17,10 @@ class SocketService {
 
       this.socket.on('connect', () => {
         console.log('[Partner App] Connected to socket server:', this.socket?.id);
+        // Socket.io rooms do not survive reconnects: re-join the last ride room.
+        if (this.lastJoin) {
+          this.socket?.emit('join_ride', this.lastJoin);
+        }
       });
 
       this.socket.on('disconnect', () => {
@@ -28,6 +34,13 @@ class SocketService {
       this.socket.disconnect();
       this.socket = null;
     }
+    this.lastJoin = null;
+  }
+
+  joinRide(rideId: string, role: string, userId?: string) {
+    if (!rideId) return;
+    this.lastJoin = { rideId, role, userId };
+    this.emit('join_ride', this.lastJoin);
   }
 
   on(event: string, callback: (data: any) => void) {

@@ -77,6 +77,7 @@ export default function DestinationSearchScreen() {
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
         pointerEvents="box-none"
       >
         {/* Transparent spacer to push sheet to the bottom */}

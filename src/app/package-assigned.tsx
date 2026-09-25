@@ -1,16 +1,33 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, Image, SafeAreaView } from 'react-native';
-import { useRouter } from 'expo-router';
+import React, { useEffect, useState, useRef } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, ActivityIndicator, SafeAreaView } from 'react-native';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import RealMap from '../components/RealMap';
-import SwipeButton from '../components/SwipeButton';
-import { COURIER_SURESH } from '../data/mockData';
+import { socketService } from '../utils/socket';
+import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type } from '../theme/typography';
 
-const PICKUP_OTP = '8391';
+type RideData = {
+  id: string;
+  type?: string;
+  status?: string;
+  otp?: string | null;
+  price?: number | string | null;
+  pickup?: { address?: string } | null;
+  dropoff?: { address?: string } | null;
+  partner?: {
+    id: string;
+    name?: string;
+    phone?: string;
+    vehicleType?: string;
+    vehicleNumber?: string;
+    vehicleModel?: string;
+    rating?: number | null;
+  } | null;
+};
 
 function PingRing() {
   const { colors } = useTheme();
@@ -38,29 +55,164 @@ export default function PackageAssignedScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
-  const [verifying, setVerifying] = useState(false);
-  const [spin] = useState(() => new Animated.Value(0));
+  const { user } = useAuth();
+  const { rideId: routeRideId, otp: routeOtp } = useLocalSearchParams<{ rideId?: string; otp?: string }>();
+  const [rideId, setRideId] = useState<string>(routeRideId || '');
+  const [otp, setOtp] = useState<string>(routeOtp || '');
+  const [ride, setRide] = useState<RideData | null>(null);
+  const [unavailable, setUnavailable] = useState(false);
+
+  const rideIdRef = useRef(rideId);
+  useEffect(() => {
+    rideIdRef.current = rideId;
+  }, [rideId]);
 
   useEffect(() => {
-    if (verifying) {
-      const loop = Animated.loop(
-        Animated.timing(spin, { toValue: 1, duration: 900, easing: Easing.linear, useNativeDriver: true })
-      );
-      loop.start();
-      return () => {
-        loop.stop();
-        spin.setValue(0);
-      };
-    }
-  }, [verifying, spin]);
+    socketService.connect();
 
-  const rotate = spin.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
+    const onRideRequested = (data: any) => {
+      if (data?.id) {
+        const id = String(data.id);
+        setRideId(id);
+        if (data.otp) setOtp(String(data.otp));
+        socketService.joinRide(id, 'customer', user?.id);
+      }
+    };
 
-  const handleHandover = () => {
-    if (verifying) return;
-    setVerifying(true);
-    setTimeout(() => router.replace('/package-transit'), 1500);
-  };
+    const onRideAccepted = (data: any) => {
+      if (!data?.id) return;
+      const id = String(data.id);
+      setRideId(id);
+      if (data.otp) setOtp(String(data.otp));
+      setRide(data);
+      socketService.joinRide(id, 'customer', user?.id);
+    };
+
+    const onRideDetails = (data: any) => {
+      if (!data) {
+        setUnavailable(true);
+        return;
+      }
+      if (data.id) {
+        setRideId(String(data.id));
+        if (data.otp) setOtp(String(data.otp));
+      }
+      setRide(data);
+      if (data?.status === 'completed') {
+        router.replace('/package-delivered');
+      } else if (data?.status === 'en_route_dropoff') {
+        router.replace(`/package-transit?rideId=${data.id}`);
+      }
+    };
+
+    const onStatus = (data: any) => {
+      if (data?.rideId && data.rideId === rideIdRef.current) {
+        setRide((prev) => (prev ? { ...prev, status: data.status } : prev));
+      }
+    };
+
+    const onStarted = (data: any) => {
+      if (data?.rideId && data.rideId === rideIdRef.current) {
+        router.replace(`/package-transit?rideId=${data.rideId}`);
+      }
+    };
+
+    const onCompleted = (data: any) => {
+      if (data?.id && data.id !== rideIdRef.current) return;
+      router.replace('/package-delivered');
+    };
+
+    const onError = (data: any) => {
+      if (data?.rideId === rideIdRef.current && (data.code === 'ride_not_found' || data.code === 'unauthorized')) {
+        setUnavailable(true);
+      }
+    };
+
+    socketService.on('ride_requested', onRideRequested);
+    socketService.on('ride_accepted', onRideAccepted);
+    socketService.on('ride_details', onRideDetails);
+    socketService.on('ride_status_updated', onStatus);
+    socketService.on('ride_started', onStarted);
+    socketService.on('ride_completed', onCompleted);
+    socketService.on('ride_error', onError);
+
+    return () => {
+      socketService.off('ride_requested', onRideRequested);
+      socketService.off('ride_accepted', onRideAccepted);
+      socketService.off('ride_details', onRideDetails);
+      socketService.off('ride_status_updated', onStatus);
+      socketService.off('ride_started', onStarted);
+      socketService.off('ride_completed', onCompleted);
+      socketService.off('ride_error', onError);
+    };
+  }, [router, user?.id]);
+
+  useEffect(() => {
+    if (rideId) socketService.joinRide(rideId, 'customer', user?.id);
+  }, [rideId, user?.id]);
+
+  const isAccepted = !!ride?.partner;
+  const isArrived = ride?.status === 'arrived';
+  const partner = ride?.partner || null;
+  const partnerName = partner?.name || 'Courier';
+  const initials = partnerName
+    .split(' ')
+    .map((w) => w[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  const vehicleName = partner?.vehicleType || partner?.vehicleModel || 'Delivery Partner';
+  const vehicleNumber = partner?.vehicleNumber || '';
+  const rating = partner?.rating ?? null;
+  const maskedPhone = partner?.phone ? `+91 ${partner.phone.replace(/\d(?=\d{4})/g, '*')}` : '';
+  const headerPillText = isArrived
+    ? 'Courier has arrived'
+    : isAccepted
+    ? 'Courier on the way'
+    : 'Courier en route to pickup';
+
+  if (unavailable) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <SharedHeader currentScreen="package-assigned" title="Package Tracking" />
+        <View style={styles.waitingWrap}>
+          <MaterialIcon name="error-outline" size={48} color={colors.textMuted} />
+          <Text style={styles.waitingTitle}>Delivery session unavailable</Text>
+          <Text style={styles.waitingSub}>
+            This order is no longer available or you are not authorized to view it.
+          </Text>
+          <TouchableOpacity style={styles.waitingBtn} onPress={() => router.replace('/(tabs)/home')}>
+            <Text style={styles.waitingBtnText}>Back to Home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isAccepted) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <SharedHeader currentScreen="package-assigned" title="Finding a Courier" />
+        <View style={styles.waitingWrap}>
+          <View style={styles.waitingSpinnerWrap}>
+            <ActivityIndicator size="large" color={colors.primary} />
+          </View>
+          <Text style={styles.waitingTitle}>Searching for a courier...</Text>
+          <Text style={styles.waitingSub}>Matching with a nearby delivery partner for your package.</Text>
+          {otp ? (
+            <View style={styles.waitingOtpPill}>
+              <Text style={styles.waitingOtpLabel}>Your ride-start PIN</Text>
+              <Text style={styles.waitingOtpDigits}>{otp.split('').join('  ')}</Text>
+            </View>
+          ) : null}
+          <TouchableOpacity style={styles.waitingBtnGhost} activeOpacity={0.9} onPress={() => router.replace('/(tabs)/home')}>
+            <Text style={styles.waitingBtnGhostText}>Cancel Request</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -94,9 +246,7 @@ export default function PackageAssignedScreen() {
                   <View style={styles.liveDotPing} />
                   <View style={styles.liveDot} />
                 </View>
-                <Text style={styles.statusPillText}>
-                  Partner Arriving in <Text style={styles.statusPillBold}>4 mins</Text>
-                </Text>
+                <Text style={styles.statusPillText}>{headerPillText}</Text>
               </View>
               <TouchableOpacity style={styles.recenterBtn} activeOpacity={0.85}>
                 <MaterialIcon name="my-location" size={20} color={colors.primary} />
@@ -135,17 +285,17 @@ export default function PackageAssignedScreen() {
 
             <View style={styles.otpBox}>
               <View>
-                <Text style={styles.otpLabel}>Pickup OTP</Text>
+                <Text style={styles.otpLabel}>Ride-start PIN</Text>
                 <View style={styles.otpDigitsRow}>
                   <Text style={styles.otpDigits}>
-                    {PICKUP_OTP.split('').join('  ')}
+                    {otp ? otp.split('').join('  ') : '— — — —'}
                   </Text>
                 </View>
               </View>
               <TouchableOpacity
                 style={styles.copyBtn}
                 activeOpacity={0.85}
-                onPress={() => Alert.alert(`Pickup OTP ${PICKUP_OTP} copied`)}
+                onPress={() => Alert.alert('Ride-start PIN', otp ? `PIN ${otp} copied` : 'PIN unavailable')}
               >
                 <MaterialIcon name="content-paste" size={16} color={colors.primaryContainer} />
                 <Text style={styles.copyBtnText}>Copy</Text>
@@ -154,7 +304,7 @@ export default function PackageAssignedScreen() {
 
             <View style={styles.otpHintRow}>
               <MaterialIcon name="info" size={14} color={colors.onPrimaryContainer} />
-              <Text style={styles.otpHintText}>Share OTP only after physically handing over the package.</Text>
+              <Text style={styles.otpHintText}>Share this PIN with your courier so they can verify pickup and start the trip.</Text>
             </View>
           </View>
 
@@ -162,22 +312,24 @@ export default function PackageAssignedScreen() {
           <View style={styles.profileCard}>
             <View style={styles.profileTopRow}>
               <View style={styles.avatarWrap}>
-                <Image source={{ uri: COURIER_SURESH.avatarUrl }} style={styles.avatar} />
+                <View style={styles.avatar}>
+                  <Text style={styles.avatarInitials}>{initials}</Text>
+                </View>
                 <View style={styles.vehicleBadge}>
                   <MaterialIcon name="electric-scooter" size={14} color={colors.primary} />
                 </View>
               </View>
               <View style={styles.profileInfo}>
                 <View style={styles.nameRow}>
-                  <Text style={styles.partnerName} numberOfLines={1}>{COURIER_SURESH.name}</Text>
+                  <Text style={styles.partnerName} numberOfLines={1}>{partnerName}</Text>
                   <View style={styles.topCourierPill}>
-                    <Text style={styles.topCourierText}>Top Courier</Text>
+                    <Text style={styles.topCourierText}>Verified</Text>
                   </View>
                 </View>
                 <View style={styles.ratingRow}>
                   <MaterialIcon name="star" size={16} color={colors.accentRed} />
-                  <Text style={styles.ratingValue}>4.92</Text>
-                  <Text style={styles.ratingMeta}>({COURIER_SURESH.deliveriesCount})</Text>
+                  <Text style={styles.ratingValue}>{rating != null ? rating : '4.5'}</Text>
+                  <Text style={styles.ratingMeta}>{maskedPhone ? `\u2022 ${maskedPhone}` : '(Verified partner)'}</Text>
                 </View>
               </View>
             </View>
@@ -185,11 +337,13 @@ export default function PackageAssignedScreen() {
             <View style={styles.vehicleTagRow}>
               <View style={styles.vehicleTagLeft}>
                 <MaterialIcon name="two-wheeler" size={18} color={colors.textMuted} />
-                <Text style={styles.vehicleTagText}>{COURIER_SURESH.vehicleName}</Text>
+                <Text style={styles.vehicleTagText}>{vehicleName}</Text>
               </View>
-              <View style={styles.platePill}>
-                <Text style={styles.plateText}>{COURIER_SURESH.vehicleNumber}</Text>
-              </View>
+              {vehicleNumber ? (
+                <View style={styles.platePill}>
+                  <Text style={styles.plateText}>{vehicleNumber}</Text>
+                </View>
+              ) : null}
             </View>
 
             {/* Quick Action Thumb Controls */}
@@ -197,7 +351,7 @@ export default function PackageAssignedScreen() {
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnPrimary]}
                 activeOpacity={0.85}
-                onPress={() => Alert.alert(`Calling ${COURIER_SURESH.name}...`)}
+                onPress={() => Alert.alert('Calling', partnerName)}
               >
                 <MaterialIcon name="call" size={20} color={colors.primary} />
                 <Text style={styles.actionLabelPrimary}>Call</Text>
@@ -205,7 +359,7 @@ export default function PackageAssignedScreen() {
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnPrimary]}
                 activeOpacity={0.85}
-                onPress={() => router.push(`/chat?rideId=test_parcel`)}
+                onPress={() => { if (rideId) router.push(`/chat?rideId=${rideId}`); }}
               >
                 <MaterialIcon name="chat" size={20} color={colors.primary} />
                 <Text style={styles.actionLabelPrimary}>Chat</Text>
@@ -246,15 +400,15 @@ export default function PackageAssignedScreen() {
                 <View style={styles.stepDotActive}>
                   <MaterialIcon name="directions-bike" size={16} color={colors.onPrimary} />
                 </View>
-                <Text style={styles.stepLabelActive}>Arriving</Text>
+                <Text style={styles.stepLabelActive}>{isArrived ? 'Arrived' : 'On the Way'}</Text>
                 <Text style={styles.stepSubActive}>Pickup</Text>
               </View>
               <View style={styles.stepItem}>
-                <View style={styles.stepDotPending}>
-                  <MaterialIcon name="archive" size={16} color={colors.textMuted} />
+                <View style={isArrived ? styles.stepDotActive : styles.stepDotPending}>
+                  <MaterialIcon name="archive" size={16} color={isArrived ? colors.onPrimary : colors.textMuted} />
                 </View>
-                <Text style={styles.stepLabelPending}>Verification</Text>
-                <Text style={styles.stepSubPending}>&amp; Handover</Text>
+                <Text style={isArrived ? styles.stepLabelActive : styles.stepLabelPending}>Verification</Text>
+                <Text style={styles.stepSubPending}>PIN &amp; Handover</Text>
               </View>
               <View style={styles.stepItem}>
                 <View style={styles.stepDotPending}>
@@ -310,28 +464,43 @@ export default function PackageAssignedScreen() {
 
           {/* Live Arrived Notification & Handover CTA */}
           <View style={styles.handoverCard}>
-            <View style={styles.arrivedRow}>
+            <View style={[styles.arrivedRow, isArrived ? styles.arrivedRowActive : null]}>
               <View style={styles.arrivedIconWrap}>
-                <MaterialIcon name="door-front" size={20} color={colors.onPrimary} />
+                <MaterialIcon name={isArrived ? 'door-front' : 'two-wheeler'} size={20} color={colors.onPrimary} />
               </View>
               <View style={styles.arrivedInfo}>
-                <Text style={styles.arrivedTitle}>Partner Arrived at Gate</Text>
-                <Text style={styles.arrivedSubtitle}>Suresh is waiting outside. Please bring package &amp; OTP.</Text>
+                <Text style={styles.arrivedTitle}>{isArrived ? 'Courier Arrived at Pickup' : 'Courier on the way'}</Text>
+                <Text style={styles.arrivedSubtitle}>
+                  {isArrived
+                    ? `${partnerName} is waiting at the pickup point. Share your PIN to start the trip.`
+                    : `${partnerName} is heading to the pickup point.`}
+                </Text>
               </View>
             </View>
 
-            <View style={{ marginTop: 8, marginBottom: 8 }}>
-              {verifying ? (
-                <View style={[styles.handoverBtn, { backgroundColor: colors.primary }]}>
-                  <Animated.View style={{ transform: [{ rotate }] }}>
-                    <MaterialIcon name="autorenew" size={20} color={colors.onPrimary} />
-                  </Animated.View>
-                  <Text style={styles.handoverBtnText}>Verifying Handover...</Text>
-                </View>
-              ) : (
-                <SwipeButton title="Slide to Confirm Handover" onSwipeComplete={handleHandover} />
-              )}
+            <View style={styles.otpShareRow}>
+              <View style={styles.otpShareIcon}>
+                <MaterialIcon name="pin" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.otpShareCol}>
+                <Text style={styles.otpShareLabel}>Ride-start PIN</Text>
+                <Text style={styles.otpShareDigits}>{otp ? otp.split('').join('  ') : '— — — —'}</Text>
+              </View>
+              <TouchableOpacity
+                style={styles.otpCopyBtn}
+                activeOpacity={0.85}
+                onPress={() => Alert.alert('Ride-start PIN', otp ? `PIN ${otp} copied` : 'PIN unavailable')}
+              >
+                <MaterialIcon name="content-paste" size={16} color={colors.primary} />
+                <Text style={styles.otpCopyText}>Copy</Text>
+              </TouchableOpacity>
             </View>
+
+            <Text style={styles.otpHelpText}>
+              {isArrived
+                ? 'Give this PIN to your courier. They will enter it to verify the pickup and start the delivery.'
+                : 'Keep this PIN ready — you will share it with your courier at pickup.'}
+            </Text>
 
             <TouchableOpacity
               style={styles.helpBtn}
@@ -637,7 +806,14 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: colors.primaryContainer,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitials: {
+    ...type.labelLg,
+    color: colors.onPrimary,
+    fontFamily: fonts.bold,
   },
   vehicleBadge: {
     position: 'absolute',
@@ -978,6 +1154,9 @@ const createStyles = (colors: any) => StyleSheet.create({
     padding: 12,
     borderRadius: 10,
   },
+  arrivedRowActive: {
+    backgroundColor: colors.primaryContainer,
+  },
   arrivedIconWrap: {
     width: 36,
     height: 36,
@@ -1022,6 +1201,60 @@ const createStyles = (colors: any) => StyleSheet.create({
     ...type.labelLg,
     color: colors.onPrimary,
   },
+  otpShareRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    backgroundColor: colors.surfaceGray,
+    padding: 12,
+    borderRadius: 12,
+  },
+  otpShareIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.lightBlueTint,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+  },
+  otpShareCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  otpShareLabel: {
+    ...type.labelSm,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  otpShareDigits: {
+    ...type.displayMetric,
+    color: colors.onSurface,
+    fontSize: 24,
+    lineHeight: 30,
+    letterSpacing: 4,
+    marginTop: 2,
+  },
+  otpCopyBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: colors.surfaceContainerLowest,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    flexShrink: 0,
+  },
+  otpCopyText: {
+    ...type.labelMd,
+    color: colors.primary,
+  },
+  otpHelpText: {
+    ...type.bodySm,
+    color: colors.textMuted,
+    paddingHorizontal: 2,
+  },
   helpBtn: {
     height: 44,
     borderRadius: 12,
@@ -1034,5 +1267,79 @@ const createStyles = (colors: any) => StyleSheet.create({
   helpBtnText: {
     ...type.labelMd,
     color: colors.onSurface,
+  },
+  waitingWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    gap: 10,
+  },
+  waitingSpinnerWrap: {
+    marginBottom: 8,
+  },
+  waitingTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 18,
+    lineHeight: 24,
+    color: colors.onSurface,
+    textAlign: 'center',
+  },
+  waitingSub: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  waitingBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 14,
+    marginTop: 8,
+  },
+  waitingBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.onPrimary,
+  },
+  waitingBtnGhost: {
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceGray,
+    marginTop: 12,
+  },
+  waitingBtnGhostText: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textMuted,
+  },
+  waitingOtpPill: {
+    alignItems: 'center',
+    backgroundColor: colors.lightBlueTint,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 16,
+    marginTop: 10,
+  },
+  waitingOtpLabel: {
+    fontFamily: fonts.semibold,
+    fontSize: 11,
+    lineHeight: 14,
+    letterSpacing: 0.5,
+    color: colors.textMuted,
+    textTransform: 'uppercase',
+  },
+  waitingOtpDigits: {
+    fontFamily: fonts.bold,
+    fontSize: 26,
+    lineHeight: 32,
+    letterSpacing: 6,
+    color: colors.primary,
+    marginTop: 4,
   },
 });

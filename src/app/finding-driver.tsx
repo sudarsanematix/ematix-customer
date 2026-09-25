@@ -9,7 +9,7 @@ import {
   Modal,
   Animated,
 } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
@@ -17,6 +17,7 @@ import RealMap from '../components/RealMap';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, fonts } from '../theme/typography';
 import { socketService } from '../utils/socket';
+import { useAuth } from '../context/AuthContext';
 
 interface PingRingProps {
   size: number;
@@ -101,6 +102,8 @@ export default function FindingDriverScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { user } = useAuth();
+  const { rideId } = useLocalSearchParams<{ rideId?: string }>();
   const [timer, setTimer] = useState(24);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const modalRef = useRef(false);
@@ -114,29 +117,24 @@ export default function FindingDriverScreen() {
       setTimer((prev) => prev + 1);
     }, 1000);
 
-    const navTimeout = setTimeout(() => {
-      clearInterval(interval);
-      if (!modalRef.current) {
-        router.replace('/active-ride?rideId=fallback_test_ride');
-      }
-    }, 12000); // fallback in case no driver accepts
-
     socketService.connect();
-    socketService.on('ride_accepted', (data) => {
+    // Join the real ride room so we're notified on acceptance even across reconnects.
+    if (rideId) socketService.joinRide(rideId, 'customer', user?.id);
+
+    const onAccepted = (data: any) => {
       console.log('Ride accepted by partner:', data);
       clearInterval(interval);
-      clearTimeout(navTimeout);
       if (!modalRef.current) {
         router.replace(`/active-ride?rideId=${data.id}`);
       }
-    });
+    };
+    socketService.on('ride_accepted', onAccepted);
 
     return () => {
       clearInterval(interval);
-      clearTimeout(navTimeout);
-      socketService.off('ride_accepted');
+      socketService.off('ride_accepted', onAccepted);
     };
-  }, [router]);
+  }, [router, rideId, user?.id]);
 
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);

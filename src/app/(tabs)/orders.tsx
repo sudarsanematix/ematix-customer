@@ -91,9 +91,9 @@ export default function OrdersScreen() {
                 <View style={styles.cardHeaderLeft}>
                   <View style={styles.iconContainer}>
                     <Image
-                      source={{ uri: order.type === 'ride' 
-                        ? 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Auto%20rickshaw/3D/auto_rickshaw_3d.png' 
-                        : 'https://raw.githubusercontent.com/microsoft/fluentui-emoji/main/assets/Motor%20scooter/3D/motor_scooter_3d.png' }}
+                      source={order.type === 'ride' 
+                        ? require('../../../assets/images/auto.png') 
+                        : require('../../../assets/images/bike.png')}
                       style={styles.cardIcon}
                     />
                   </View>

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, Image, SafeAreaView } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
@@ -9,6 +9,16 @@ import DraggableSheet from '../components/DraggableSheet';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type } from '../theme/typography';
 import { socketService } from '../utils/socket';
+import { useAuth } from '../context/AuthContext';
+
+type RideData = {
+  id?: string;
+  partner?: {
+    name?: string;
+    vehicleType?: string;
+    vehicleNumber?: string;
+  } | null;
+};
 
 function BounceMarker() {
   const { colors } = useTheme();
@@ -52,7 +62,7 @@ function BounceMarker() {
         <View style={styles.markerStatusDot} />
       </View>
       <View style={styles.markerLabel}>
-        <Text style={styles.markerLabelText}>Suresh (Moving)</Text>
+        <Text style={styles.markerLabelText}>{'Courier (Moving)'}</Text>
       </View>
     </Animated.View>
   );
@@ -89,25 +99,38 @@ export default function PackageTransitScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { user } = useAuth();
+  const { rideId } = useLocalSearchParams<{ rideId?: string }>();
+  const [ride, setRide] = useState<RideData | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
 
   useEffect(() => {
-    const timer = setTimeout(() => {
-      router.replace('/package-delivered');
-    }, 15000); // Fallback timer
-
     socketService.connect();
-    socketService.on('ride_completed', () => {
+    if (rideId) socketService.joinRide(rideId, 'customer', user?.id);
+
+    const onDetails = (data: any) => {
+      if (!data) return;
+      if (rideId && data.id && data.id !== rideId) return;
+      setRide(data);
+    };
+
+    const onCompleted = (data: any) => {
+      if (rideId && data?.id && data.id !== rideId) return;
       console.log('Parcel delivered!');
-      clearTimeout(timer);
       router.replace('/package-delivered');
-    });
+    };
+
+    socketService.on('ride_details', onDetails);
+    socketService.on('ride_completed', onCompleted);
 
     return () => {
-      clearTimeout(timer);
-      socketService.off('ride_completed');
+      socketService.off('ride_details', onDetails);
+      socketService.off('ride_completed', onCompleted);
     };
-  }, [router]);
+  }, [router, rideId, user?.id]);
+
+  const partnerName = ride?.partner?.name || 'Suresh Kumar';
+  const partnerMeta = `${ride?.partner?.vehicleType || 'Two Wheeler'} \u2022 ${ride?.partner?.vehicleNumber || 'TN 07 BV 4120'}`;
 
   const handleShare = () => {
     setShareCopied(true);
@@ -275,17 +298,17 @@ export default function PackageTransitScreen() {
               </View>
               <View style={styles.partnerInfo}>
                 <View style={styles.partnerNameRow}>
-                  <Text style={styles.partnerName} numberOfLines={1}>Suresh Kumar</Text>
+                  <Text style={styles.partnerName} numberOfLines={1}>{partnerName}</Text>
                   <Text style={styles.partnerRating}>★ 4.9</Text>
                 </View>
-                <Text style={styles.partnerMeta}>Two Wheeler • TN 07 BV 4120</Text>
+                <Text style={styles.partnerMeta}>{partnerMeta}</Text>
               </View>
             </View>
             <View style={styles.partnerActions}>
               <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85}>
                 <MaterialIcon name="call" size={20} color={colors.primary} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85} onPress={() => router.push(`/chat?rideId=test_parcel`)}>
+              <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85} onPress={() => { if (rideId) router.push(`/chat?rideId=${rideId}`); }}>
                 <MaterialIcon name="chat" size={20} color={colors.primary} />
               </TouchableOpacity>
             </View>

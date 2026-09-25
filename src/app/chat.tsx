@@ -16,6 +16,8 @@ import MaterialIcon from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type, spacing } from '../theme/typography';
 import { socketService } from '../utils/socket';
+import { useAuth } from '../context/AuthContext';
+import { clearUnread } from '../utils/unread';
 
 type Message = {
   id: string;
@@ -28,6 +30,7 @@ export default function CustomerChatScreen() {
   const { colors, isDark } = useTheme();
   const styles = createStyles(colors, isDark);
   const router = useRouter();
+  const { user } = useAuth();
   const { rideId } = useLocalSearchParams<{ rideId: string }>();
 
   const [messages, setMessages] = useState<Message[]>([
@@ -43,9 +46,10 @@ export default function CustomerChatScreen() {
 
   useEffect(() => {
     socketService.connect();
-    
+    clearUnread(rideId);
+
     if (rideId) {
-      socketService.emit('join_ride', { rideId });
+      socketService.emit('join_ride', { rideId, role: 'customer', userId: user?.id });
     }
 
     const handleReceiveMessage = (data: any) => {
@@ -64,7 +68,6 @@ export default function CustomerChatScreen() {
 
     const handleChatHistory = (history: any[]) => {
       console.log('[CustomerChat] Received chat history:', history);
-      // Filter out system message and set history
       const formattedHistory = history.map(msg => ({
         id: msg.id,
         sender: msg.sender,
@@ -77,14 +80,22 @@ export default function CustomerChatScreen() {
       });
     };
 
+    const handleRideDetails = (data: any) => {
+      if (data && data.id === rideId && Array.isArray(data.messages)) {
+        handleChatHistory(data.messages);
+      }
+    };
+
     socketService.on('receive_message', handleReceiveMessage);
     socketService.on('chat_history', handleChatHistory);
+    socketService.on('ride_details', handleRideDetails);
 
     return () => {
       socketService.off('receive_message', handleReceiveMessage);
       socketService.off('chat_history', handleChatHistory);
+      socketService.off('ride_details', handleRideDetails);
     };
-  }, [rideId]);
+  }, [rideId, user?.id]);
 
   const sendMessage = () => {
     if (!inputText.trim()) return;
@@ -121,11 +132,13 @@ export default function CustomerChatScreen() {
       <KeyboardAvoidingView
         style={styles.keyboardView}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
           ref={scrollViewRef}
           style={styles.chatArea}
           contentContainerStyle={styles.chatContent}
+          keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
         >
           {messages.map((msg) => {

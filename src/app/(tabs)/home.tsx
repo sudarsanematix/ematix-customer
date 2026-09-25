@@ -346,20 +346,20 @@ export default function HomeScreen() {
           <View style={styles.recentList}>
             {isLoading
               ? [1, 2, 3].map((key) => (
-                  <View key={key} style={styles.recentCard}>
-                    <View style={styles.recentCardLeft}>
-                      <Skeleton variant="circular" width={40} height={40} />
-                      <View style={styles.recentTextWrap}>
-                        <Skeleton variant="text" width="60%" height={14} style={{ marginBottom: 4 }} />
-                        <Skeleton variant="text" width="85%" height={12} />
-                      </View>
+                <View key={key} style={styles.recentCard}>
+                  <View style={styles.recentCardLeft}>
+                    <Skeleton variant="circular" width={40} height={40} />
+                    <View style={styles.recentTextWrap}>
+                      <Skeleton variant="text" width="60%" height={14} style={{ marginBottom: 4 }} />
+                      <Skeleton variant="text" width="85%" height={12} />
                     </View>
-                    <Skeleton width={70} height={36} radius={8} />
                   </View>
-                ))
+                  <Skeleton width={70} height={36} radius={8} />
+                </View>
+              ))
               : SAVED_PLACES.map((p: any) => {
-                  const placeCfg = HOME_PLACE_ICONS(colors)[p.tagType] || HOME_PLACE_ICONS(colors).default;
-                  return (
+                const placeCfg = HOME_PLACE_ICONS(colors)[p.tagType] || HOME_PLACE_ICONS(colors).default;
+                return (
                   <TouchableOpacity key={p.title} style={styles.recentCard} activeOpacity={0.9}>
                     <View style={styles.recentCardLeft}>
                       <View style={[styles.recentIconWrap, { backgroundColor: placeCfg.bg }]}>
@@ -375,8 +375,8 @@ export default function HomeScreen() {
                       <MaterialIcon name="chevron-right" size={16} color={colors.primary} />
                     </TouchableOpacity>
                   </TouchableOpacity>
-                  );
-                })}
+                );
+              })}
           </View>
         </View>
 
