@@ -18,6 +18,7 @@ import { fonts, type, spacing, radius } from '../../theme/typography';
 import SharedHeader from '../../components/SharedHeader';
 import MaterialIcon from '../../components/MaterialIcon';
 import { SAVED_PLACES } from '../../data/mockData';
+import { useAuth } from '../../context/AuthContext';
 
 const STATS = [
   { label: 'Trips', value: '48', icon: 'local-taxi' },
@@ -155,13 +156,14 @@ export default function ProfileScreen() {
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { user, logout } = useAuth();
 
   const [sheet, setSheet] = useState<SheetId>(null);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
 
-  const [userName, setUserName] = useState('Alex Johnson');
-  const [userPhone, setUserPhone] = useState('+91 98765 43210');
+  const [userName, setUserName] = useState(user?.name || 'Guest');
+  const [userPhone, setUserPhone] = useState(user?.phone || 'No phone set');
   const [editName, setEditName] = useState(userName);
   const [editPhone, setEditPhone] = useState(userPhone);
 
@@ -259,7 +261,10 @@ export default function ProfileScreen() {
           <MaterialIcon name="chevron-right" size={20} color={colors.onSurfaceVariant} />
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={() => setLogoutOpen(true)}>
+        <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={async () => {
+          await logout();
+          router.replace('/login');
+        }}>
           <MaterialIcon name="logout" size={18} color={colors.accentRed} />
           <Text style={styles.logoutText}>Log Out</Text>
         </TouchableOpacity>

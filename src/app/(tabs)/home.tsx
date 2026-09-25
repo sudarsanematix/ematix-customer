@@ -18,6 +18,7 @@ import SharedHeader from '../../components/SharedHeader';
 import MaterialIcon from '../../components/MaterialIcon';
 import RealMap from '../../components/RealMap';
 import Skeleton from '../../components/Skeleton';
+import { useAuth } from '../../context/AuthContext';
 
 function PingRing({ color, size }: { color: string; size: number }) {
   const { colors } = useTheme();
@@ -142,6 +143,7 @@ export default function HomeScreen() {
   const styles = createStyles(colors);
 
   const router = useRouter();
+  const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -160,7 +162,7 @@ export default function HomeScreen() {
             {isLoading ? (
               <Skeleton width={120} height={28} radius={6} style={{ marginBottom: 4 }} />
             ) : (
-              <Text style={styles.greeting}>Hello, Alex 👋</Text>
+              <Text style={styles.greeting}>Hello, {user?.name || user?.phone || 'Guest'} 👋</Text>
             )}
             <TouchableOpacity style={styles.locationBtn} activeOpacity={0.8}>
               <MaterialIcon name="near-me" size={18} color={colors.primary} />

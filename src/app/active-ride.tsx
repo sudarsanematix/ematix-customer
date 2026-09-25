@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, Image, ScrollView, Animated } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
 import SharedHeader from '../components/SharedHeader';
@@ -8,11 +8,13 @@ import MaterialIcon from '../components/MaterialIcon';
 import RealMap from '../components/RealMap';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts } from '../theme/typography';
+import { socketService } from '../utils/socket';
 
 export default function ActiveRideScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { rideId } = useLocalSearchParams<{ rideId: string }>();
   const [driverOffset] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -31,8 +33,18 @@ export default function ActiveRideScreen() {
       ])
     );
     loop.start();
-    return () => loop.stop();
-  }, [driverOffset]);
+
+    socketService.connect();
+    socketService.on('ride_completed', () => {
+      console.log('Ride completed!');
+      router.replace('/ride-completed');
+    });
+
+    return () => {
+      loop.stop();
+      socketService.off('ride_completed');
+    };
+  }, [driverOffset, router]);
 
   const handleMapTap = () => {
     router.replace('/ride-completed');
@@ -177,7 +189,11 @@ export default function ActiveRideScreen() {
                 <MaterialIcon name="call" size={20} color={colors.primary} />
                 <Text style={styles.actionLabel}>Call</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.actionBtnPrimary} activeOpacity={0.9}>
+              <TouchableOpacity
+                style={styles.actionBtnPrimary}
+                activeOpacity={0.9}
+                onPress={() => router.push(`/chat?rideId=${rideId || 'test_ride'}`)}
+              >
                 <View style={styles.unreadDot} />
                 <MaterialIcon name="chat-bubble" size={20} color={colors.primary} />
                 <Text style={styles.actionLabel}>Chat</Text>

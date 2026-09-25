@@ -6,6 +6,8 @@ import MaterialIcon from '../components/MaterialIcon';
 import { PARCEL_VEHICLES } from '../data/mockData';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts } from '../theme/typography';
+import { Image } from 'react-native';
+import { socketService } from '../utils/socket';
 
 const INSTRUCTION_CHIPS = ['+ Ring bell twice', '+ Leave at gate', '+ Call receiver'];
 
@@ -98,8 +100,12 @@ export default function PackageVehicleScreen() {
               >
                 <View style={styles.vehicleTopRow}>
                   <View style={styles.vehicleLeft}>
-                    <View style={[styles.vehicleAvatar, isTwoWheeler ? styles.avatarScooter : styles.avatarAuto]}>
-                      <Text style={styles.vehicleEmoji}>{v.id === 'two-wheeler' ? '🛵' : '🛺'}</Text>
+                    <View style={[styles.vehicleAvatarWrapper, isTwoWheeler ? styles.avatarScooter : styles.avatarAuto]}>
+                      <Image
+                        source={v.id === 'two-wheeler' ? require('../../assets/images/bike.png') : require('../../assets/images/auto.png')}
+                        style={styles.vehicleImage}
+                        resizeMode="contain"
+                      />
                     </View>
                     <View style={styles.vehicleInfoCol}>
                       <View style={styles.vehicleTitleRow}>
@@ -216,7 +222,17 @@ export default function PackageVehicleScreen() {
         <TouchableOpacity
           style={styles.ctaBtn}
           activeOpacity={0.95}
-          onPress={() => router.push('/package-assigned')}
+          onPress={() => {
+            socketService.emit('request_ride', {
+              type: 'parcel',
+              vehicle: vehicle.name,
+              price: vehicle.price,
+              pickup: 'Greenways Road, RA Puram',
+              dropoff: '12th Cross St, Indiranagar',
+              eta: vehicle.eta
+            });
+            router.push('/package-assigned');
+          }}
         >
           <Text style={styles.ctaText}>Continue to Delivery Summary — ₹{vehicle.price}</Text>
           <MaterialIcon name="arrow-forward" size={20} color={colors.onPrimary} />
@@ -451,27 +467,24 @@ const createStyles = (colors: any) => StyleSheet.create({
     flex: 1,
     minWidth: 0,
   },
-  vehicleAvatar: {
-    width: 48,
-    height: 48,
-    borderRadius: 12,
+  vehicleAvatarWrapper: {
+    width: 64,
+    height: 64,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
     flexShrink: 0,
+    overflow: 'hidden',
   },
-  vehicleEmoji: {
-    fontSize: 26,
+  vehicleImage: {
+    width: '120%',
+    height: '120%',
   },
   avatarScooter: {
-    backgroundColor: colors.surfaceContainerLowest,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    elevation: 1,
+    backgroundColor: '#FFF0F5', // Light pink/peach for bike
   },
   avatarAuto: {
-    backgroundColor: colors.surfaceGray,
+    backgroundColor: '#FFF8E1', // Light yellow for auto
   },
   vehicleInfoCol: {
     flex: 1,
@@ -555,14 +568,16 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   checkBadge: {
     position: 'absolute',
-    top: 12,
-    right: 12,
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+    top: -8,
+    right: -8,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     backgroundColor: colors.primary,
     justifyContent: 'center',
     alignItems: 'center',
+    borderWidth: 2,
+    borderColor: colors.surface,
   },
   instructionsCard: {
     backgroundColor: colors.surfaceContainerLowest,

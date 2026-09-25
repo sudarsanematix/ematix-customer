@@ -8,6 +8,7 @@ import RealMap from '../components/RealMap';
 import DraggableSheet from '../components/DraggableSheet';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type } from '../theme/typography';
+import { socketService } from '../utils/socket';
 
 function BounceMarker() {
   const { colors } = useTheme();
@@ -93,9 +94,19 @@ export default function PackageTransitScreen() {
   useEffect(() => {
     const timer = setTimeout(() => {
       router.replace('/package-delivered');
-    }, 15000);
+    }, 15000); // Fallback timer
 
-    return () => clearTimeout(timer);
+    socketService.connect();
+    socketService.on('ride_completed', () => {
+      console.log('Parcel delivered!');
+      clearTimeout(timer);
+      router.replace('/package-delivered');
+    });
+
+    return () => {
+      clearTimeout(timer);
+      socketService.off('ride_completed');
+    };
   }, [router]);
 
   const handleShare = () => {
@@ -274,7 +285,7 @@ export default function PackageTransitScreen() {
               <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85}>
                 <MaterialIcon name="call" size={20} color={colors.primary} />
               </TouchableOpacity>
-              <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85} onPress={() => router.push(`/chat?rideId=test_parcel`)}>
                 <MaterialIcon name="chat" size={20} color={colors.primary} />
               </TouchableOpacity>
             </View>

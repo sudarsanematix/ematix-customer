@@ -1,15 +1,6 @@
 import React from 'react';
-import { StyleSheet, View, StyleProp, ViewStyle, Platform } from 'react-native';
-
-let MapView: any = null;
-if (Platform.OS !== 'web') {
-  try {
-    const maps = require('react-native-maps');
-    MapView = maps.default || maps;
-  } catch (e) {
-    console.warn('react-native-maps not available', e);
-  }
-}
+import { StyleSheet, View, StyleProp, ViewStyle, Text } from 'react-native';
+import { WebView } from 'react-native-webview';
 
 export type MapRegion = {
   latitude: number;
@@ -33,21 +24,25 @@ interface RealMapProps {
 }
 
 export default function RealMap({ style, region = CHENNAI_REGION, interactive = false, children }: RealMapProps) {
+  // Calculate bounding box for OpenStreetMap iframe
+  const minLon = region.longitude - region.longitudeDelta;
+  const minLat = region.latitude - region.latitudeDelta;
+  const maxLon = region.longitude + region.longitudeDelta;
+  const maxLat = region.latitude + region.latitudeDelta;
+  
+  const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${minLon},${minLat},${maxLon},${maxLat}&layer=mapnik&marker=${region.latitude},${region.longitude}`;
+
   return (
     <View style={[styles.container, style]}>
-      {MapView ? (
-        <MapView
-          style={StyleSheet.absoluteFill}
-          initialRegion={region}
-          scrollEnabled={interactive}
-          zoomEnabled={interactive}
-          rotateEnabled={interactive}
-          pitchEnabled={false}
-          showsCompass={false}
-        />
-      ) : (
-        <View style={[StyleSheet.absoluteFill, { backgroundColor: '#e8ecef' }]} />
-      )}
+      <WebView 
+        source={{ uri: mapUrl }} 
+        style={StyleSheet.absoluteFill}
+        scrollEnabled={interactive}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        pointerEvents={interactive ? 'auto' : 'none'}
+      />
+      <View style={styles.webTint} pointerEvents="none" />
       {children ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
           {children}
@@ -64,5 +59,13 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
     position: 'relative',
     backgroundColor: '#e8ecef',
+  },
+  webTint: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0,33,124,0.12)',
   },
 });

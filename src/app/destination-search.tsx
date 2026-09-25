@@ -37,27 +37,37 @@ export default function DestinationSearchScreen() {
   const { vehicle } = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   
+  const [pickup, setPickup] = useState('Current Location');
   const [destination, setDestination] = useState('');
+  const [focusedField, setFocusedField] = useState<'pickup' | 'destination'>('destination');
 
   return (
     <View style={styles.container}>
       {/* Background Map */}
       <RealMap interactive style={StyleSheet.absoluteFill} />
 
-      {/* Floating Center Pin for the Map */}
+      {/* Floating Center Pin for the Map (hidden by default) */}
+      {/* 
       <View style={styles.centerPinWrap} pointerEvents="none">
         <View style={styles.centerPinIconWrap}>
           <MaterialIcon name="location-on" size={28} color={colors.accentRed} />
         </View>
         <View style={styles.centerPinShadow} />
       </View>
+      */}
 
       {/* Back Button (Absolute Top Left) */}
       <View style={[styles.backBtnWrap, { top: Math.max(insets.top, 16) }]} pointerEvents="box-none">
         <TouchableOpacity 
           style={styles.backBtn} 
           activeOpacity={0.8}
-          onPress={() => router.back()}
+          onPress={() => {
+            if (router.canGoBack()) {
+              router.back();
+            } else {
+              router.replace('/(tabs)/home');
+            }
+          }}
         >
           <MaterialIcon name="arrow-back" size={24} color={colors.onSurface} />
         </TouchableOpacity>
@@ -96,8 +106,20 @@ export default function DestinationSearchScreen() {
                     <View style={styles.blueDot} />
                   </View>
                 </View>
-                <View style={styles.fieldBox}>
-                  <Text style={styles.fieldValue} numberOfLines={1}>Current Location</Text>
+                <View style={[styles.fieldBox, focusedField === 'pickup' && styles.fieldBoxActive]}>
+                  <TextInput
+                    style={styles.destInput}
+                    value={pickup}
+                    onChangeText={setPickup}
+                    placeholder="Pickup location"
+                    placeholderTextColor={colors.textMuted}
+                    onFocus={() => setFocusedField('pickup')}
+                  />
+                  {pickup.length > 0 && focusedField === 'pickup' && (
+                    <TouchableOpacity onPress={() => setPickup('')} style={styles.clearBtn}>
+                      <MaterialIcon name="close" size={20} color={colors.textMuted} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               </View>
 
@@ -109,7 +131,7 @@ export default function DestinationSearchScreen() {
                 <View style={styles.iconCol}>
                   <MaterialIcon name="square" size={10} color={colors.accentRed} />
                 </View>
-                <View style={[styles.fieldBox, styles.fieldBoxActive]}>
+                <View style={[styles.fieldBox, focusedField === 'destination' && styles.fieldBoxActive]}>
                   <TextInput
                     style={styles.destInput}
                     value={destination}
@@ -117,8 +139,9 @@ export default function DestinationSearchScreen() {
                     placeholder="Where to?"
                     placeholderTextColor={colors.textMuted}
                     autoFocus
+                    onFocus={() => setFocusedField('destination')}
                   />
-                  {destination.length > 0 && (
+                  {destination.length > 0 && focusedField === 'destination' && (
                     <TouchableOpacity onPress={() => setDestination('')} style={styles.clearBtn}>
                       <MaterialIcon name="close" size={20} color={colors.textMuted} />
                     </TouchableOpacity>
@@ -144,8 +167,13 @@ export default function DestinationSearchScreen() {
                   style={styles.savedChip} 
                   activeOpacity={0.8}
                   onPress={() => {
-                    setDestination(chip.title);
-                    router.push({ pathname: '/select-ride', params: { vehicle } });
+                    if (focusedField === 'pickup') {
+                      setPickup(chip.title);
+                      setFocusedField('destination');
+                    } else {
+                      setDestination(chip.title);
+                      router.push({ pathname: '/select-ride', params: { vehicle } });
+                    }
                   }}
                 >
                   <View style={[styles.chipIconWrap, chip.primary ? styles.chipPrimary : styles.chipNeutral]}>
@@ -169,8 +197,13 @@ export default function DestinationSearchScreen() {
                     style={styles.listItem}
                     activeOpacity={0.7}
                     onPress={() => {
-                      setDestination(item.title);
-                      router.push({ pathname: '/select-ride', params: { vehicle } });
+                      if (focusedField === 'pickup') {
+                        setPickup(item.title);
+                        setFocusedField('destination');
+                      } else {
+                        setDestination(item.title);
+                        router.push({ pathname: '/select-ride', params: { vehicle } });
+                      }
                     }}
                   >
                     <View style={[styles.listIconWrapper, { backgroundColor: iconCfg.bg }]}>

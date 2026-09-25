@@ -13,16 +13,29 @@ import { useRouter } from 'expo-router';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type, spacing, radius } from '../theme/typography';
 import MaterialIcon from '../components/MaterialIcon';
+import { useAuth } from '../context/AuthContext';
+import { auth } from '../utils/firebaseConfig';
+import { RecaptchaVerifier, signInWithPhoneNumber } from 'firebase/auth';
+
+declare global {
+  interface Window {
+    recaptchaVerifier: any;
+  }
+}
 
 export default function LoginScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { login } = useAuth();
 
   const [step, setStep] = useState<'phone' | 'otp'>('phone');
   const [phone, setPhone] = useState('');
   const [otp, setOtp] = useState('');
   const [resendIn, setResendIn] = useState(30);
+  const [confirmationResult, setConfirmationResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
 
   const phoneValid = phone.replace(/\D/g, '').length === 10;
 
@@ -32,16 +45,51 @@ export default function LoginScreen() {
     return () => clearTimeout(timer);
   }, [resendIn]);
 
-  const sendCode = () => {
-    if (!phoneValid) return;
-    setOtp('');
-    setResendIn(30);
-    setStep('otp');
+  const initRecaptcha = () => {
+    // Disabled for mock flow
   };
 
-  const verifyOtp = () => {
+  const sendCode = async () => {
+    if (!phoneValid) return;
+    setErrorMsg('');
+    setLoading(true);
+    
+    // MOCK FLOW: Skip Firebase, just go to OTP step
+    setTimeout(() => {
+      setOtp('');
+      setResendIn(30);
+      setStep('otp');
+      setLoading(false);
+    }, 500);
+  };
+
+  const verifyOtp = async () => {
     if (otp.length < 4) return;
-    router.replace('/(tabs)/home');
+    setErrorMsg('');
+    setLoading(true);
+    
+    try {
+      // MOCK FLOW: Send phone and OTP directly to backend
+      const response = await fetch('http://192.168.1.34:4000/api/auth/customer/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, otp })
+      });
+      
+      const data = await response.json();
+      if (data.success) {
+        // Success! Save to global state and local storage
+        await login(data.user, data.token);
+        router.replace('/(tabs)/home');
+      } else {
+        setErrorMsg(data.error || 'Backend verification failed');
+      }
+    } catch (error: any) {
+      console.error(error);
+      setErrorMsg(error.message || 'Network error');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -138,6 +186,7 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </>
           )}
+          {Platform.OS === 'web' && <View nativeID="recaptcha-container" />}
 
           <Text style={styles.termsText}>
             `By continuing you agree to Ematix{'\u2019'}s `{' '}

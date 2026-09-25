@@ -5,6 +5,7 @@ import Svg, { Circle, Path } from 'react-native-svg';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import RealMap from '../components/RealMap';
+import SwipeButton from '../components/SwipeButton';
 import { COURIER_SURESH } from '../data/mockData';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type } from '../theme/typography';
@@ -204,7 +205,7 @@ export default function PackageAssignedScreen() {
               <TouchableOpacity
                 style={[styles.actionBtn, styles.actionBtnPrimary]}
                 activeOpacity={0.85}
-                onPress={() => Alert.alert('Opening live chat with courier...')}
+                onPress={() => router.push(`/chat?rideId=test_parcel`)}
               >
                 <MaterialIcon name="chat" size={20} color={colors.primary} />
                 <Text style={styles.actionLabelPrimary}>Chat</Text>
@@ -319,22 +320,18 @@ export default function PackageAssignedScreen() {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.handoverBtn, verifying && styles.handoverBtnDone, verifying && { backgroundColor: colors.primary }]}
-              activeOpacity={0.97}
-              onPress={handleHandover}
-            >
+            <View style={{ marginTop: 8, marginBottom: 8 }}>
               {verifying ? (
-                <Animated.View style={{ transform: [{ rotate }] }}>
-                  <MaterialIcon name="autorenew" size={20} color={colors.onPrimary} />
-                </Animated.View>
+                <View style={[styles.handoverBtn, { backgroundColor: colors.primary }]}>
+                  <Animated.View style={{ transform: [{ rotate }] }}>
+                    <MaterialIcon name="autorenew" size={20} color={colors.onPrimary} />
+                  </Animated.View>
+                  <Text style={styles.handoverBtnText}>Verifying Handover...</Text>
+                </View>
               ) : (
-                <MaterialIcon name="check-circle" size={20} color={colors.onPrimary} />
+                <SwipeButton title="Slide to Confirm Handover" onSwipeComplete={handleHandover} />
               )}
-              <Text style={styles.handoverBtnText}>
-                {verifying ? 'Verifying Handover...' : 'Confirm Package Handover'}
-              </Text>
-            </TouchableOpacity>
+            </View>
 
             <TouchableOpacity
               style={styles.helpBtn}

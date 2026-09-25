@@ -29,7 +29,13 @@ export default function SharedHeader({ currentScreen = 'home', title }: SharedHe
       <View style={styles.leftSection}>
         {!isRootTab && (
           <TouchableOpacity
-            onPress={() => router.back()}
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.replace('/(tabs)/home');
+              }
+            }}
             style={styles.backBtn}
             activeOpacity={0.7}
           >

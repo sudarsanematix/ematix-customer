@@ -55,6 +55,8 @@ export default function PackageDeliveryScreen() {
   const [recipientName, setRecipientName] = useState('Priya Sharma');
   const [recipientPhone, setRecipientPhone] = useState('+91 98765 43210');
   const [smsTracking, setSmsTracking] = useState(true);
+  const [pickup, setPickup] = useState('Greenways Road, RA Puram');
+  const [dropoff, setDropoff] = useState('12th Cross St, Indiranagar');
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -93,7 +95,13 @@ export default function PackageDeliveryScreen() {
               </View>
               <View style={styles.nodeText}>
                 <Text style={styles.nodeLabelMuted}>PICKUP</Text>
-                <Text style={styles.nodeValue} numberOfLines={1}>Greenways Road, RA Puram</Text>
+                <TextInput
+                  style={styles.nodeInput}
+                  value={pickup}
+                  onChangeText={setPickup}
+                  placeholder="Enter pickup location"
+                  placeholderTextColor={colors.textMuted}
+                />
               </View>
             </View>
             <View style={styles.routeNode}>
@@ -102,7 +110,13 @@ export default function PackageDeliveryScreen() {
               </View>
               <View style={styles.nodeText}>
                 <Text style={styles.nodeLabelRed}>DROP-OFF</Text>
-                <Text style={styles.nodeValue} numberOfLines={1}>12th Cross St, Indiranagar</Text>
+                <TextInput
+                  style={styles.nodeInput}
+                  value={dropoff}
+                  onChangeText={setDropoff}
+                  placeholder="Enter drop-off location"
+                  placeholderTextColor={colors.textMuted}
+                />
               </View>
             </View>
           </View>
@@ -333,7 +347,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     backgroundColor: colors.surface,
   },
   contentContainer: {
-    paddingBottom: 110,
+    paddingBottom: 180,
   },
   progressHeader: {
     paddingHorizontal: 20,
@@ -483,11 +497,14 @@ const createStyles = (colors: any) => StyleSheet.create({
     letterSpacing: 0.22,
     color: colors.accentRed,
   },
-  nodeValue: {
+  nodeInput: {
     fontFamily: fonts.semibold,
     fontSize: 13,
     lineHeight: 18,
     color: colors.onSurface,
+    padding: 0,
+    marginTop: 2,
+    margin: 0,
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -742,9 +759,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     shadowRadius: 3,
     elevation: 3,
   },
-  toggleKnobOn: {
-    transform: [{ translateX: 20 }],
-  },
+  toggleKnobOn: {},
   toggleKnobOff: {},
   valueCard: {
     backgroundColor: colors.surfaceContainerLowest,

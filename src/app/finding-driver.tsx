@@ -16,6 +16,7 @@ import MaterialIcon from '../components/MaterialIcon';
 import RealMap from '../components/RealMap';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, fonts } from '../theme/typography';
+import { socketService } from '../utils/socket';
 
 interface PingRingProps {
   size: number;
@@ -116,13 +117,24 @@ export default function FindingDriverScreen() {
     const navTimeout = setTimeout(() => {
       clearInterval(interval);
       if (!modalRef.current) {
-        router.replace('/active-ride');
+        router.replace('/active-ride?rideId=fallback_test_ride');
       }
-    }, 12000);
+    }, 12000); // fallback in case no driver accepts
+
+    socketService.connect();
+    socketService.on('ride_accepted', (data) => {
+      console.log('Ride accepted by partner:', data);
+      clearInterval(interval);
+      clearTimeout(navTimeout);
+      if (!modalRef.current) {
+        router.replace(`/active-ride?rideId=${data.id}`);
+      }
+    });
 
     return () => {
       clearInterval(interval);
       clearTimeout(navTimeout);
+      socketService.off('ride_accepted');
     };
   }, [router]);
 
@@ -296,7 +308,11 @@ export default function FindingDriverScreen() {
                 activeOpacity={0.9}
                 onPress={() => {
                   setShowCancelModal(false);
-                  router.back();
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.replace('/(tabs)/home');
+                  }
                 }}
               >
                 <Text style={styles.confirmCancelBtnText}>Yes, Cancel Ride</Text>

@@ -20,6 +20,7 @@ import MaterialIcon from '../components/MaterialIcon';
 import RealMap from '../components/RealMap';
 import DraggableSheet from '../components/DraggableSheet';
 import SwipeButton from '../components/SwipeButton';
+import { socketService } from '../utils/socket';
 
 const RIDE_OPTIONS = [
   {
@@ -228,7 +229,17 @@ export default function SelectRideScreen() {
         <View style={styles.swipeWrap}>
           <SwipeButton
             title="Slide To Send Request"
-            onSwipeComplete={() => router.push('/finding-driver')}
+            onSwipeComplete={() => {
+              socketService.emit('request_ride', {
+                type: 'ride',
+                vehicle: selectedRide.name,
+                price: selectedRide.price,
+                pickup: '1400 Ocean St, Santa Cruz',
+                dropoff: '2221 S Havana St, Aurora',
+                eta: selectedRide.time
+              });
+              router.push('/finding-driver');
+            }}
           />
         </View>
 
