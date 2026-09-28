@@ -1,5 +1,6 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, Image, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, Image } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Path } from 'react-native-svg';
 import SharedHeader from '../components/SharedHeader';
@@ -145,9 +146,9 @@ export default function PackageTransitScreen() {
         {/* Map Canvas */}
         <View style={styles.mapContainer}>
           <RealMap interactive style={styles.mapImage}>
-            <View style={styles.mapOverlay} />
+            <View style={styles.mapOverlay} pointerEvents="none" />
 
-            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 360" preserveAspectRatio="xMidYMid slice">
+            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 360" preserveAspectRatio="xMidYMid slice" pointerEvents="none">
               <Path d="M 72 260 C 130 250, 150 170, 220 160 C 270 152, 290 95, 320 65" stroke="#0033b1" strokeLinecap="round" strokeLinejoin="round" strokeOpacity={0.18} strokeWidth={8} />
               <Path d="M 72 260 C 130 250, 150 170, 220 160 C 270 152, 290 95, 320 65" stroke="#0033b1" strokeDasharray="6 4" strokeLinecap="round" strokeWidth={4} />
             </Svg>

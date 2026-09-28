@@ -48,10 +48,11 @@ export default function SharedHeader({ currentScreen = 'home', title }: SharedHe
               <Text style={styles.logoText}>E</Text>
             </View>
             <Text style={styles.brandName}>Ematix</Text>
-            <View style={styles.divider} />
           </View>
         )}
-        <Text style={styles.screenTitle} numberOfLines={1}>{displayTitle}</Text>
+        {!isRootTab && (
+          <Text style={styles.screenTitle} numberOfLines={1}>{displayTitle}</Text>
+        )}
       </View>
 
       <View style={styles.rightSection}>

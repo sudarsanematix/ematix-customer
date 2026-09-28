@@ -1,10 +1,10 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   Platform,
   Image,
   Animated,
@@ -32,7 +32,7 @@ const RIDE_OPTIONS = [
     distance: '20km',
     time: '45mins',
     promo: 'Not Applied',
-    price: '$65',
+    price: '₹65',
   },
   {
     id: 'auto',
@@ -42,7 +42,7 @@ const RIDE_OPTIONS = [
     distance: '20km',
     time: '52mins',
     promo: 'ECO50 Applied',
-    price: '$35',
+    price: '₹35',
   },
 ];
 
@@ -104,8 +104,11 @@ export default function SelectRideScreen() {
   const styles = createStyles(colors);
   const router = useRouter();
   const { user } = useAuth();
-  const { vehicle } = useLocalSearchParams();
+  const { vehicle, pickup: routePickup, destination: routeDestination } = useLocalSearchParams();
   const pendingRideRef = useRef<((data: any) => void) | null>(null);
+
+  const pickup = typeof routePickup === 'string' ? routePickup : '';
+  const dropoff = typeof routeDestination === 'string' ? routeDestination : '';
 
   // Find the selected vehicle, default to car if not provided
   const selectedVehicleType = vehicle || 'car';
@@ -129,17 +132,15 @@ export default function SelectRideScreen() {
       customerId: user?.id,
       vehicle: selectedRide.name,
       price: selectedRide.price,
-      pickup: '1400 Ocean St, Santa Cruz',
-      dropoff: '2221 S Havana St, Aurora',
+      pickup: pickup,
+      dropoff: dropoff,
       eta: selectedRide.time,
     });
 
-    // Fallback if the ack is somehow missed: navigate without an id and let
-    // finding-driver recover via ride_accepted/join_ride.
-    const fallback = setTimeout(() => router.push('/finding-driver'), 8000);
+    const fallback = setTimeout(() => router.push({ pathname: '/finding-driver', params: { vehicle: selectedVehicleType, pickup, dropoff } }), 8000);
     pendingRideRef.current = (data: any) => {
       clearTimeout(fallback);
-      router.push(`/finding-driver?rideId=${data?.id ? String(data.id) : ''}`);
+      router.push({ pathname: '/finding-driver', params: { rideId: data?.id ? String(data.id) : '', vehicle: selectedVehicleType, pickup, dropoff } });
     };
   };
 
@@ -149,53 +150,30 @@ export default function SelectRideScreen() {
 
       {/* Map Canvas with Overlays */}
       <View style={styles.mapContainer}>
-        <RealMap interactive style={styles.mapImage}>
+        <RealMap 
+          interactive 
+          style={styles.mapImage}
+          showUserLocation={true}
+          markers={[
+            { id: 'pickup', latitude: 13.0450, longitude: 80.2310, color: '#00217C' },
+            { id: 'dropoff', latitude: 13.0150, longitude: 80.2450, color: '#C52A2E' }
+          ]}
+          routeCoordinates={[
+            [80.2310, 13.0450],
+            [80.2330, 13.0400],
+            [80.2380, 13.0300],
+            [80.2420, 13.0200],
+            [80.2450, 13.0150]
+          ]}
+        >
           <LinearGradient
             colors={['rgba(0,33,124,0.1)', 'transparent', 'rgba(252,249,248,0.8)']}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={styles.mapScrim}
+            pointerEvents="none"
           />
 
-          {/* Route SVG */}
-          <Svg style={styles.routeSvg} width="100%" height="100%" viewBox="0 0 390 320">
-            <Defs>
-              <SvgGradient id="routeGradient" x1="0%" x2="100%" y1="0%" y2="100%">
-                <Stop offset="0%" stopColor="#0033b1" />
-                <Stop offset="50%" stopColor="#3859b3" />
-                <Stop offset="100%" stopColor="#c52a2e" />
-              </SvgGradient>
-            </Defs>
-            <Path
-              d="M 60,65 Q 120,110 180,130 T 320,200"
-              fill="none"
-              opacity={0.8}
-              stroke="#000" // Mockup uses black solid line for route
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={4}
-            />
-          </Svg>
-
-          {/* Origin node (from mockup) */}
-          <View style={styles.originNode}>
-            <View style={styles.nodeLabel}>
-              <Text style={styles.nodeLabelText}>1400 Ocean St, Santa Cruz</Text>
-              <View style={styles.originCircle}>
-                <MaterialIcon name="near-me" size={12} color="#85C77A" />
-              </View>
-            </View>
-          </View>
-
-          {/* Destination node (from mockup) */}
-          <View style={styles.destNode}>
-            <View style={styles.nodeLabelDark}>
-              <Text style={styles.nodeLabelTextDark}>2221 S Havana St, Aurora</Text>
-              <View style={styles.destCircle}>
-                <MaterialIcon name="near-me" size={12} color="#F4B000" />
-              </View>
-            </View>
-          </View>
 
         </RealMap>
       </View>
@@ -252,7 +230,7 @@ export default function SelectRideScreen() {
 
             <View style={styles.badgeColumn}>
               <View style={[styles.badgeCircle, { backgroundColor: '#00215E' }]}>
-                <MaterialIcon name="attach-money" size={20} color="#34C759" />
+                <MaterialIcon name="currency-rupee" size={20} color="#34C759" />
               </View>
               <Text style={[styles.badgeLabel, { color: '#34C759', fontFamily: fonts.bold }]}>{selectedRide.price}</Text>
             </View>

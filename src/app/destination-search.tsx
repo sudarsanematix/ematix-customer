@@ -9,13 +9,15 @@ import {
   KeyboardAvoidingView,
   Platform,
 } from 'react-native';
+import * as Location from 'expo-location';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import RealMap from '../components/RealMap';
-import { POPULAR_LOCATIONS } from '../data/mockData';
 import { useTheme } from '../theme/ThemeProvider';
 import { type, spacing, radius, fonts } from '../theme/typography';
 import MaterialIcon, { MaterialIconName } from '../components/MaterialIcon';
+
+const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
 
 const SAVED_CHIPS = [
   { title: 'Home', icon: 'home' as MaterialIconName, primary: true },
@@ -30,6 +32,15 @@ const PLACE_ICONS_FACTORY = (c: any): Record<string, { icon: MaterialIconName; b
   commercial: { icon: 'business', bg: c.surfaceContainer, color: c.onSurfaceVariant },
 });
 
+const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number) => {
+  const R = 6371; // Radius of the earth in km
+  const dLat = (lat2 - lat1) * (Math.PI / 180);
+  const dLon = (lon2 - lon1) * (Math.PI / 180);
+  const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) + Math.cos(lat1 * (Math.PI / 180)) * Math.cos(lat2 * (Math.PI / 180)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+};
+
 export default function DestinationSearchScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -40,11 +51,70 @@ export default function DestinationSearchScreen() {
   const [pickup, setPickup] = useState('Current Location');
   const [destination, setDestination] = useState('');
   const [focusedField, setFocusedField] = useState<'pickup' | 'destination'>('destination');
+  const [myLocation, setMyLocation] = useState<{ latitude: number, longitude: number } | null>(null);
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+
+  React.useEffect(() => {
+    (async () => {
+      try {
+        const { status } = await Location.requestForegroundPermissionsAsync();
+        if (status === 'granted') {
+          const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+          setMyLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        }
+      } catch (err) {
+        console.warn('Location error:', err);
+      }
+    })();
+  }, []);
+
+  const handleSearch = async (text: string) => {
+    if (!text || text.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+    const proximity = myLocation ? `&proximity=${myLocation.longitude},${myLocation.latitude}` : '';
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(text)}.json?access_token=${MAPBOX_TOKEN}${proximity}&types=poi,place,address&limit=5`;
+    try {
+      const res = await fetch(url);
+      const data = await res.json();
+      const features = data.features || [];
+      const results = features.map((f: any) => {
+        let distStr = '';
+        if (myLocation && f.center) {
+           const d = getDistanceFromLatLonInKm(myLocation.latitude, myLocation.longitude, f.center[1], f.center[0]);
+           if (d < 1) distStr = `${Math.round(d * 1000)}m`;
+           else distStr = `${d.toFixed(1)}km`;
+        }
+        return {
+          title: f.text,
+          subtitle: f.place_name,
+          distance: distStr,
+          center: f.center, // [lng, lat]
+          tagType: 'commercial'
+        };
+      });
+      setSearchResults(results);
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  React.useEffect(() => {
+    const query = focusedField === 'pickup' ? pickup : destination;
+    const timer = setTimeout(() => handleSearch(query), 500);
+    return () => clearTimeout(timer);
+  }, [pickup, destination, focusedField, myLocation]);
 
   return (
     <View style={styles.container}>
       {/* Background Map */}
-      <RealMap interactive style={StyleSheet.absoluteFill} />
+      <RealMap 
+        interactive 
+        style={StyleSheet.absoluteFill} 
+        region={myLocation ? { latitude: myLocation.latitude, longitude: myLocation.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : undefined}
+        markers={myLocation ? [{ id: 'me', latitude: myLocation.latitude, longitude: myLocation.longitude, color: '#007AFF' }] : []}
+      />
 
       {/* Floating Center Pin for the Map (hidden by default) */}
       {/* 
@@ -173,7 +243,7 @@ export default function DestinationSearchScreen() {
                       setFocusedField('destination');
                     } else {
                       setDestination(chip.title);
-                      router.push({ pathname: '/select-ride', params: { vehicle } });
+                      router.push({ pathname: '/select-ride', params: { vehicle, pickup, destination: chip.title } });
                     }
                   }}
                 >
@@ -187,9 +257,15 @@ export default function DestinationSearchScreen() {
 
             <View style={styles.divider} />
 
-            {/* Popular Locations List */}
+            {/* Search Results List */}
             <View style={styles.listContainer}>
-              {POPULAR_LOCATIONS.map((item: any, idx: number) => {
+              {searchResults.length === 0 && (pickup.length > 1 || destination.length > 1) ? (
+                <View style={{ padding: 20, alignItems: 'center' }}>
+                  <Text style={{ color: colors.textMuted }}>No exact matches found. Type more to search.</Text>
+                </View>
+              ) : null}
+
+              {searchResults.map((item: any, idx: number) => {
                 const placeIcons = PLACE_ICONS_FACTORY(colors);
                 const iconCfg = placeIcons[item.tagType] || placeIcons.commercial;
                 return (
@@ -203,7 +279,7 @@ export default function DestinationSearchScreen() {
                         setFocusedField('destination');
                       } else {
                         setDestination(item.title);
-                        router.push({ pathname: '/select-ride', params: { vehicle } });
+                        router.push({ pathname: '/select-ride', params: { vehicle, pickup, destination: item.title } });
                       }
                     }}
                   >
@@ -214,6 +290,11 @@ export default function DestinationSearchScreen() {
                       <Text style={styles.listTitle} numberOfLines={1}>{item.title}</Text>
                       <Text style={styles.listSubtitle} numberOfLines={1}>{item.subtitle}</Text>
                     </View>
+                    {item.distance ? (
+                      <View style={{ paddingLeft: 8 }}>
+                        <Text style={{ fontSize: 12, color: colors.textMuted, fontWeight: '500' }}>{item.distance}</Text>
+                      </View>
+                    ) : null}
                   </TouchableOpacity>
                 );
               })}

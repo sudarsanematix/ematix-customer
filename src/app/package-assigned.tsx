@@ -1,5 +1,6 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, ActivityIndicator, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
 import SharedHeader from '../components/SharedHeader';
@@ -222,9 +223,9 @@ export default function PackageAssignedScreen() {
         {/* Map Context Section */}
         <View style={styles.mapContainer}>
           <RealMap interactive style={styles.mapImage}>
-            <View style={styles.mapOverlay} />
+            <View style={styles.mapOverlay} pointerEvents="none" />
 
-            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 320" preserveAspectRatio="xMidYMid slice">
+            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 320" preserveAspectRatio="xMidYMid slice" pointerEvents="none">
               <Path d="M 90 270 Q 140 210 195 180 T 270 110" stroke="#0033B1" strokeDasharray="6 6" strokeLinecap="round" strokeWidth="4" opacity={0.8} />
               <Circle cx={270} cy={110} r={18} fill="#0033B1" fillOpacity={0.15} />
               <Circle cx={270} cy={110} r={8} fill="#0033B1" />

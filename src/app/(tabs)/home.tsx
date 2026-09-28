@@ -1,3 +1,4 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import {
   View,
@@ -6,7 +7,6 @@ import {
   TextInput,
   ScrollView,
   TouchableOpacity,
-  SafeAreaView,
   Animated,
   Easing,
 } from 'react-native';
@@ -19,6 +19,9 @@ import MaterialIcon from '../../components/MaterialIcon';
 import RealMap from '../../components/RealMap';
 import Skeleton from '../../components/Skeleton';
 import { useAuth } from '../../context/AuthContext';
+import { socketService } from '../../utils/socket';
+import { MapMarker } from '../../components/RealMap';
+import * as Location from 'expo-location';
 
 function PingRing({ color, size }: { color: string; size: number }) {
   const { colors } = useTheme();
@@ -145,11 +148,55 @@ export default function HomeScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
+  const [nearbyPartners, setNearbyPartners] = useState<any[]>([]);
+  const [myLocation, setMyLocation] = useState<{ latitude: number, longitude: number } | null>(null);
+
+  const locateMe = async () => {
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status === 'granted') {
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
+        setMyLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+      }
+    } catch (err) {
+      // Silently ignore if location services are disabled, to avoid yellow box warnings
+    }
+  };
 
   useEffect(() => {
+    locateMe();
+
     // Simulate fetching data from backend
     const timer = setTimeout(() => setIsLoading(false), 2000);
-    return () => clearTimeout(timer);
+
+    // Fetch real nearby partners
+    socketService.connect();
+    socketService.emit('get_nearby_partners', {});
+
+    const handleNearbyPartners = (partners: any[]) => {
+      setNearbyPartners(partners);
+    };
+
+    const handlePartnerLocationUpdated = (partner: any) => {
+      setNearbyPartners(prev => {
+        const index = prev.findIndex(p => p.partnerId === partner.partnerId);
+        if (index >= 0) {
+          const newArr = [...prev];
+          newArr[index] = partner;
+          return newArr;
+        }
+        return [...prev, partner];
+      });
+    };
+
+    socketService.on('nearby_partners', handleNearbyPartners);
+    socketService.on('partner_location_updated', handlePartnerLocationUpdated);
+
+    return () => {
+      clearTimeout(timer);
+      socketService.off('nearby_partners', handleNearbyPartners);
+      socketService.off('partner_location_updated', handlePartnerLocationUpdated);
+    };
   }, []);
 
   return (
@@ -310,18 +357,28 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.mapBox}>
-            <RealMap interactive style={styles.mapImage} />
-            <View style={styles.mapOverlay} />
-            <DriftingPin top={32} left={56} color={colors.accentRed} icon="electric-rickshaw" delay={0} />
-            <DriftingPin top={80} right={64} color={colors.primary} icon="directions-car" delay={800} />
-            <DriftingPin bottom={40} left="33.33%" color={colors.accentRed} icon="electric-rickshaw" delay={400} />
-            <View style={styles.youWrap}>
-              <PingRing color={colors.primary} size={16} />
-              <View style={styles.youDot} />
-              <View style={styles.youLabel}>
-                <Text style={styles.youLabelText}>You</Text>
-              </View>
-            </View>
+            <RealMap 
+              interactive 
+              style={styles.mapImage}
+              region={myLocation ? { latitude: myLocation.latitude, longitude: myLocation.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : undefined}
+              markers={[
+                ...(myLocation ? [{ id: 'me', latitude: myLocation.latitude, longitude: myLocation.longitude, color: '#007AFF' }] : []),
+                ...nearbyPartners.map(p => ({
+                  id: p.partnerId,
+                  latitude: p.lat,
+                  longitude: p.lng,
+                  color: p.vehicleType === 'bike' || p.vehicleType === 'auto' ? '#C52A2E' : '#00217C'
+                }))
+              ]}
+            />
+            <TouchableOpacity 
+              style={{ position: 'absolute', bottom: 16, right: 16, backgroundColor: colors.surface, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 }}
+              activeOpacity={0.8}
+              onPress={locateMe}
+            >
+              <MaterialIcon name="my-location" size={24} color={colors.primary} />
+            </TouchableOpacity>
+            <View style={styles.mapOverlay} pointerEvents="none" />
             <View style={styles.mapLegend}>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: colors.accentRed }]} />

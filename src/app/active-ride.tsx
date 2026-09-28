@@ -1,5 +1,6 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState, useRef } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, SafeAreaView, ScrollView, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import Svg, { Path, Circle } from 'react-native-svg';
@@ -50,7 +51,8 @@ export default function ActiveRideScreen() {
   const styles = createStyles(colors);
   const router = useRouter();
   const { user } = useAuth();
-  const { rideId } = useLocalSearchParams<{ rideId: string }>();
+  const { rideId, vehicle } = useLocalSearchParams<{ rideId: string, vehicle?: string }>();
+  const isCar = vehicle === 'car';
   const [driverOffset] = useState(() => new Animated.Value(0));
   const [ride, setRide] = useState<RideData | null>(null);
   const [unavailable, setUnavailable] = useState(false);
@@ -219,7 +221,7 @@ export default function ActiveRideScreen() {
             />
 
             {/* Route Polyline */}
-            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 370">
+            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 370" pointerEvents="none">
               <Path
                 d="M 96 112 C 140 130, 160 190, 210 215 C 248 235, 278 210, 310 262"
                 opacity={0.45}
@@ -257,7 +259,7 @@ export default function ActiveRideScreen() {
               <View style={styles.driverPulseRing} />
               <View style={styles.driverHalo}>
                 <View style={styles.driverInner}>
-                  <MaterialIcon name="electric-rickshaw" size={19} color={colors.onPrimary} />
+                  <MaterialIcon name={isCar ? "local-taxi" : "electric-rickshaw"} size={19} color={colors.onPrimary} />
                 </View>
               </View>
               <View style={styles.bearingBadge}>
@@ -278,7 +280,7 @@ export default function ActiveRideScreen() {
                       <Text style={styles.arrivingText} numberOfLines={1}>{statusLabel}</Text>
                     </View>
                     <Text style={styles.distanceText} numberOfLines={1}>
-                      {ride?.partner?.name ? `${ride.partner.name} · ${ride.partner.vehicleModel || 'Partner'}` : 'Connecting to your partner'}
+                      {ride?.partner?.name ? `${ride.partner.name} · ${ride.partner.vehicleModel || (isCar ? 'Prime Sedan' : 'Ematix Auto')}` : 'Connecting to your partner'}
                     </Text>
                   </View>
                 </View>
@@ -343,7 +345,7 @@ export default function ActiveRideScreen() {
               {ride?.partner?.vehicleNumber || ride?.partner?.vehicleModel ? (
                 <View style={styles.vehicleMeta}>
                   <Text style={styles.plateText}>{ride?.partner?.vehicleNumber || '—'}</Text>
-                  <Text style={styles.modelText}>{ride?.partner?.vehicleModel || 'Vehicle'}</Text>
+                  <Text style={styles.modelText}>{ride?.partner?.vehicleModel || (isCar ? 'Prime Sedan' : 'Ematix Auto')}</Text>
                 </View>
               ) : null}
             </View>

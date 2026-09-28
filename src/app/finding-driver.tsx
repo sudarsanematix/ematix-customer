@@ -1,10 +1,10 @@
+import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  SafeAreaView,
   ScrollView,
   Modal,
   Animated,
@@ -103,7 +103,8 @@ export default function FindingDriverScreen() {
   const styles = createStyles(colors);
   const router = useRouter();
   const { user } = useAuth();
-  const { rideId } = useLocalSearchParams<{ rideId?: string }>();
+  const { rideId, vehicle, pickup, dropoff } = useLocalSearchParams<{ rideId?: string, vehicle?: string, pickup?: string, dropoff?: string }>();
+  const isCar = vehicle === 'car';
   const [timer, setTimer] = useState(24);
   const [showCancelModal, setShowCancelModal] = useState(false);
   const modalRef = useRef(false);
@@ -125,7 +126,7 @@ export default function FindingDriverScreen() {
       console.log('Ride accepted by partner:', data);
       clearInterval(interval);
       if (!modalRef.current) {
-        router.replace(`/active-ride?rideId=${data.id}`);
+        router.replace({ pathname: '/active-ride', params: { rideId: data.id, vehicle } });
       }
     };
     socketService.on('ride_accepted', onAccepted);
@@ -154,10 +155,11 @@ export default function FindingDriverScreen() {
             <LinearGradient
               colors={['rgba(252,249,248,0.7)', 'transparent', colors.surface]}
               style={StyleSheet.absoluteFill}
+              pointerEvents="none"
             />
 
             {/* Floating Pill Status Beacon */}
-            <View style={styles.beaconContainer}>
+            <View style={styles.beaconContainer} pointerEvents="none">
               <View style={styles.beaconPill}>
                 <View style={styles.beaconDotWrap}>
                   <View style={styles.beaconPing} />
@@ -168,7 +170,7 @@ export default function FindingDriverScreen() {
             </View>
 
             {/* Radar Waves & User Beacon Node */}
-            <View style={styles.radarCenter}>
+            <View style={styles.radarCenter} pointerEvents="none">
               <PingRing size={256} duration={3000} delay={0} color="rgba(0,33,124,0.1)" />
               <PingRing size={176} duration={2000} delay={600} color="rgba(0,33,124,0.15)" />
               <View style={styles.radarGlow}>
@@ -203,7 +205,7 @@ export default function FindingDriverScreen() {
               <Animated.View style={styles.syncSpin}>
                 <MaterialIcon name="sync" size={22} color={colors.primary} />
               </Animated.View>
-              <Text style={styles.sheetTitle}>Finding an Auto near you...</Text>
+              <Text style={styles.sheetTitle}>Finding {isCar ? 'a Car' : 'an Auto'} near you...</Text>
             </View>
             <Text style={styles.sheetSubtitle}>Matching with top-rated drivers within 1.5 km</Text>
           </View>
@@ -212,7 +214,7 @@ export default function FindingDriverScreen() {
             <View style={styles.progressHeader}>
               <View style={styles.progressLeft}>
                 <View style={styles.progressPulseDot} />
-                <Text style={styles.progressText}>Contacting 4 nearby autos...</Text>
+                <Text style={styles.progressText}>Contacting 4 nearby {isCar ? 'cars' : 'autos'}...</Text>
               </View>
               <Text style={styles.timerText}>{formatTime(timer)}</Text>
             </View>
@@ -225,11 +227,11 @@ export default function FindingDriverScreen() {
             <View style={styles.detailsHeader}>
               <View style={styles.vehicleInfo}>
                 <View style={styles.vehicleIconWrapper}>
-                  <MaterialIcon name="electric-rickshaw" size={28} color={colors.primary} />
+                  <MaterialIcon name={isCar ? "local-taxi" : "electric-rickshaw"} size={28} color={colors.primary} />
                 </View>
                 <View>
                   <View style={styles.vehicleTitleRow}>
-                    <Text style={styles.vehicleTitle}>Ematix Auto</Text>
+                    <Text style={styles.vehicleTitle}>{isCar ? 'Prime Sedan' : 'Ematix Auto'}</Text>
                     <View style={styles.ecoBadge}>
                       <Text style={styles.ecoBadgeText}>Eco</Text>
                     </View>
@@ -254,11 +256,11 @@ export default function FindingDriverScreen() {
               </View>
               <View style={styles.routeTextColumn}>
                 <View style={styles.routePointRow}>
-                  <Text style={styles.routeLocationText} numberOfLines={1}>Anna Salai, Mount Road</Text>
+                  <Text style={styles.routeLocationText} numberOfLines={1}>{pickup || ''}</Text>
                   <Text style={styles.routeLabelText}>Pickup</Text>
                 </View>
                 <View style={styles.routePointRow}>
-                  <Text style={styles.routeLocationText} numberOfLines={1}>Marina Bay Promenade</Text>
+                  <Text style={styles.routeLocationText} numberOfLines={1}>{dropoff || ''}</Text>
                   <Text style={styles.routeLabelText}>Drop</Text>
                 </View>
               </View>
