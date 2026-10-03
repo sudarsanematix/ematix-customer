@@ -45,13 +45,28 @@ export default function LoginScreen() {
     setErrorMsg('');
     setLoading(true);
 
-    setTimeout(() => {
-      setNotRegistered(false);
-      setOtp('');
-      setResendIn(30);
-      setStep('otp');
+    try {
+      const response = await fetch('http://192.168.1.34:4000/api/auth/customer/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone })
+      });
+
+      const data = await response.json();
+      if (data.success) {
+        setNotRegistered(false);
+        setOtp('');
+        setResendIn(30);
+        setStep('otp');
+      } else {
+        setErrorMsg(data.error || 'Failed to send OTP');
+      }
+    } catch (error: any) {
+      console.error(error);
+      setErrorMsg(error.message || 'Network error');
+    } finally {
       setLoading(false);
-    }, 500);
+    }
   };
 
   const verifyOtp = async () => {

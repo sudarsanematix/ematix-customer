@@ -560,7 +560,13 @@ const RUNTIME = String.raw`
       interactive: CFG.interactive,
       bearing: 0,
       pitch: 0,
-      attributionControl: true
+      attributionControl: true,
+      transformRequest: (url, resourceType) => {
+        if (url.includes('mapbox-incidents-v1')) {
+          return { url: 'data:application/x-protobuf;base64,' };
+        }
+        return { url };
+      }
     });
   } catch (bootError) {
     postEvent('error', { message: String(bootError) });

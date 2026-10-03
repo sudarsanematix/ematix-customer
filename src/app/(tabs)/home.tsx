@@ -9,19 +9,20 @@ import {
   TouchableOpacity,
   Animated,
   Easing,
+  Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
-import { SAVED_PLACES } from '../../data/mockData';
 import { useTheme } from '../../theme/ThemeProvider';
 import { buildMapTheme, type MapThemeTokens } from '../../theme/mapTheme';
 import { fonts, type, spacing, radius } from '../../theme/typography';
 import SharedHeader from '../../components/SharedHeader';
 import MaterialIcon from '../../components/MaterialIcon';
-import RealMap from '../../components/RealMap';
+import RealMap, { CHENNAI_REGION } from '../../components/RealMap';
+import { markerImageFor } from '../../components/markerImages';
+import type { LiveVehicleKind } from '../../components/liveMapTypes';
 import Skeleton from '../../components/Skeleton';
 import { useAuth } from '../../context/AuthContext';
 import { socketService } from '../../utils/socket';
-import { MapMarker, CHENNAI_REGION } from '../../components/RealMap';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -74,74 +75,38 @@ function PulsingDot({ color, size = 8 }: { color: string; size?: number }) {
   );
 }
 
-type PosOffset = number | `${number}%`;
-
 const HOME_PLACE_ICONS = (c: any): Record<string, { icon: any; bg: any; color: any }> => ({
   home: { icon: 'home' as const, bg: c.lightBlueTint, color: c.primary },
   work: { icon: 'corporate-fare' as const, bg: c.surfaceContainerHigh, color: c.onSurface },
   default: { icon: 'sports-tennis' as const, bg: c.surfaceContainerHigh, color: c.onSurface },
 });
 
-function DriftingPin({
-  top,
-  left,
-  right,
-  bottom,
-  color,
-  icon,
-  delay = 0,
-}: {
-  top?: PosOffset;
-  left?: PosOffset;
-  right?: PosOffset;
-  bottom?: PosOffset;
-  color: string;
-  icon: 'electric-rickshaw' | 'directions-car';
-  delay?: number;
-}) {
-  const { colors, isDark } = useTheme();
-  const styles = createStyles(colors, buildMapTheme(isDark));
-  const [translate] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }));
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.delay(delay),
-        Animated.timing(translate, {
-          toValue: { x: 6, y: -6 },
-          duration: 1200,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(translate, {
-          toValue: { x: 0, y: 0 },
-          duration: 1200,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [translate, delay]);
-
-  return (
-    <Animated.View
-      style={[
-        styles.pinWrap,
-        { top, left, right, bottom },
-        { transform: [{ translateX: translate.x }, { translateY: translate.y }] },
-      ]}
-    >
-      <View style={styles.pin}>
-        <MaterialIcon name={icon} size={18} color={color} />
-        <View style={[styles.pinDot, { backgroundColor: color === colors.accentRed ? colors.accentRed : colors.primary }]} />
-      </View>
-    </Animated.View>
-  );
-}
-
 // Places are moved inside component to access dynamic colors
+
+type ServiceType = 'ride' | 'parcel';
+
+/**
+ * The chips are UI groupings, not backend values. Every chip must list the real
+ * `Partner.vehicleType` values it stands for, otherwise a live partner is
+ * filtered out and the radar silently renders nothing. See `models/Partner.js`
+ * (`bike | auto | mini_truck | prime_sedan`) and `LiveVehicleKind`.
+ */
+type VehicleChip = {
+  key: string;
+  label: string;
+  kinds: LiveVehicleKind[];
+};
+
+const VEHICLES_BY_SERVICE: Record<ServiceType, VehicleChip[]> = {
+  ride: [
+    { key: 'taxi', label: 'Taxi', kinds: ['prime_sedan', 'mini_truck'] },
+    { key: 'auto', label: 'Auto', kinds: ['auto'] },
+  ],
+  parcel: [
+    { key: 'bike', label: 'Bike', kinds: ['bike'] },
+    { key: 'auto', label: 'Auto', kinds: ['auto'] },
+  ],
+};
 
 export default function HomeScreen() {
   const { colors, isDark } = useTheme();
@@ -157,16 +122,32 @@ export default function HomeScreen() {
   const [addressName, setAddressName] = useState('Locating...');
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
+  const [serviceType, setServiceType] = useState<ServiceType>('ride');
+  const [vehicleChipKey, setVehicleChipKey] = useState<string>('taxi');
+
+  const chips = VEHICLES_BY_SERVICE[serviceType];
+  // Guards against a stale key when the service changes under us.
+  const activeChip = chips.find((c) => c.key === vehicleChipKey) ?? chips[0];
+
+  const handleServiceChange = (service: ServiceType) => {
+    setServiceType(service);
+    setVehicleChipKey(VEHICLES_BY_SERVICE[service][0].key);
+  };
+
+  /** Keeps the chip's pin colour and the map markers on one source of truth. */
+  const markerColorFor = (kind?: LiveVehicleKind) =>
+    kind === 'bike' || kind === 'auto' ? mapTheme.success : mapTheme.routeDone;
+
   const locateMe = async () => {
     setAddressName('Locating...');
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
         const lat = loc.coords.latitude;
         const lng = loc.coords.longitude;
         setMyLocation({ latitude: lat, longitude: lng });
-        
+
         // Cache valid GPS fix for next startup
         if (loc.coords.accuracy && loc.coords.accuracy < 1000) {
           AsyncStorage.setItem('@last_known_location', JSON.stringify({
@@ -174,7 +155,7 @@ export default function HomeScreen() {
             longitude: lng,
             latitudeDelta: 0.05,
             longitudeDelta: 0.05
-          })).catch(() => {});
+          })).catch(() => { });
         }
 
         const fetchOSM = async (lat: number, lng: number) => {
@@ -197,16 +178,16 @@ export default function HomeScreen() {
           }
           return null;
         };
-        
+
         try {
           const geocode = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
           if (geocode && geocode.length > 0) {
             const place = geocode[0];
-            
+
             // Build a more user-friendly location name
             const streetInfo = [place.streetNumber, place.street].filter(Boolean).join(' ');
             const neighborhood = place.district || place.subregion || place.city || place.region;
-            
+
             let finalName = '';
             if (place.name && place.name !== streetInfo && place.name !== neighborhood) {
               finalName = place.name;
@@ -217,11 +198,11 @@ export default function HomeScreen() {
             } else if (neighborhood) {
               finalName = neighborhood;
             }
-            
+
             if (!finalName) {
               finalName = (await fetchOSM(lat, lng)) || place.country || `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
             }
-            
+
             setAddressName(finalName);
           } else {
             const osmName = await fetchOSM(lat, lng);
@@ -254,21 +235,22 @@ export default function HomeScreen() {
       }
     };
     loadCache();
-    
+
     locateMe();
 
     // Simulate fetching data from backend
     const timer = setTimeout(() => setIsLoading(false), 2000);
 
-    // Fetch real nearby partners
+    // Fetch real nearby partners. The listeners are bound first so the reply
+    // can never land before there is anything to receive it.
     socketService.connect();
-    socketService.emit('get_nearby_partners', {});
 
     const handleNearbyPartners = (partners: any[]) => {
-      setNearbyPartners(partners);
+      setNearbyPartners(Array.isArray(partners) ? partners : []);
     };
 
     const handlePartnerLocationUpdated = (partner: any) => {
+      if (!partner?.partnerId) return;
       setNearbyPartners(prev => {
         const index = prev.findIndex(p => p.partnerId === partner.partnerId);
         if (index >= 0) {
@@ -282,6 +264,7 @@ export default function HomeScreen() {
 
     socketService.on('nearby_partners', handleNearbyPartners);
     socketService.on('partner_location_updated', handlePartnerLocationUpdated);
+    socketService.emit('get_nearby_partners', {});
 
     return () => {
       clearTimeout(timer);
@@ -290,11 +273,25 @@ export default function HomeScreen() {
     };
   }, []);
 
+  const filteredPartners = useMemo(() => {
+    const kinds = activeChip.kinds;
+    return nearbyPartners.filter((partner: any) => {
+      const lat = partner?.lat ?? partner?.latitude;
+      const lng = partner?.lng ?? partner?.longitude;
+      if (typeof lat !== 'number' || typeof lng !== 'number' || isNaN(lat) || isNaN(lng)) {
+        return false;
+      }
+      // Server sends `vehicleType` from the Partner enum. Anything else is a
+      // malformed record and must not be shown on the radar.
+      return kinds.includes(partner.vehicleType);
+    });
+  }, [nearbyPartners, activeChip]);
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <SharedHeader currentScreen="home" />
-      <ScrollView 
-        contentContainerStyle={styles.container} 
+      <ScrollView
+        contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
         scrollEnabled={scrollEnabled}
       >
@@ -446,36 +443,77 @@ export default function HomeScreen() {
           <View style={styles.radarHeader}>
             <View>
               <Text style={styles.radarTitle}>Live Vehicles Nearby</Text>
-              <Text style={styles.radarSubtitle}>{nearbyPartners.length} Drivers active near {addressName}</Text>
+              <Text style={styles.radarSubtitle}>
+                {filteredPartners.length} {activeChip.label}
+                {filteredPartners.length === 1 ? '' : 's'} active
+              </Text>
             </View>
             <View style={styles.liveBadge}>
               <PulsingDot color={colors.primary} />
               <Text style={styles.liveText}>Live Radar</Text>
             </View>
           </View>
-          <View 
+
+          {/* Segmented Controls */}
+          <View style={{ marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 12, padding: 4, marginBottom: 8 }}>
+              {(['ride', 'parcel'] as ServiceType[]).map((service) => {
+                const isActive = serviceType === service;
+                return (
+                  <TouchableOpacity
+                    key={service}
+                    style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: isActive ? colors.primary : 'transparent' }}
+                    onPress={() => handleServiceChange(service)}
+                  >
+                    <Text style={{ fontWeight: '600', color: isActive ? colors.onPrimary : colors.onSurface }}>
+                      {service === 'ride' ? '🚗 Ride' : '📦 Parcel'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {chips.map((chip) => {
+                const isActive = activeChip.key === chip.key;
+                return (
+                  <TouchableOpacity
+                    key={chip.key}
+                    style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 12, borderWidth: 2, borderColor: isActive ? colors.primary : colors.outline, backgroundColor: isActive ? colors.primary + '11' : colors.surface }}
+                    onPress={() => setVehicleChipKey(chip.key)}
+                  >
+                    <Image source={{ uri: markerImageFor(chip.kinds[0]) }} style={{ width: 40, height: 40, marginBottom: 8, resizeMode: 'contain' }} />
+                    <Text style={{ fontWeight: '600', color: isActive ? colors.primary : colors.onSurfaceVariant }}>{chip.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View
             style={styles.mapBox}
             onTouchStart={() => setScrollEnabled(false)}
             onTouchEnd={() => setScrollEnabled(true)}
             onTouchCancel={() => setScrollEnabled(true)}
           >
             {bootRegion ? (
-              <RealMap 
-                interactive 
+              <RealMap
+                interactive
                 style={styles.mapImage}
                 region={myLocation ? { latitude: myLocation.latitude, longitude: myLocation.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : bootRegion}
                 markers={[
-                ...(myLocation ? [{ id: 'me', latitude: myLocation.latitude, longitude: myLocation.longitude, color: mapTheme.onBase }] : []),
-                ...nearbyPartners.map(p => ({
-                  id: p.partnerId,
-                  latitude: p.lat,
-                  longitude: p.lng,
-                  color: p.vehicleType === 'bike' || p.vehicleType === 'auto' ? mapTheme.success : mapTheme.routeDone
-                }))
-              ]}
-            />
+                  ...(myLocation ? [{ id: 'me', latitude: myLocation.latitude, longitude: myLocation.longitude, color: mapTheme.onBase }] : []),
+                  ...filteredPartners.map(p => ({
+                    id: p.partnerId,
+                    latitude: p.lat ?? p.latitude,
+                    longitude: p.lng ?? p.longitude,
+                    vehicleType: p.vehicleType,
+                    color: markerColorFor(p.vehicleType)
+                  }))
+                ]}
+              />
             ) : null}
-            <TouchableOpacity 
+            <TouchableOpacity
               style={{ position: 'absolute', bottom: 16, right: 16, backgroundColor: colors.surface, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 }}
               activeOpacity={0.8}
               onPress={locateMe}
@@ -483,14 +521,18 @@ export default function HomeScreen() {
               <MaterialIcon name="my-location" size={24} color={colors.primary} />
             </TouchableOpacity>
             <View style={styles.mapOverlay} pointerEvents="none" />
+            {filteredPartners.length === 0 ? (
+              <View style={styles.mapEmpty} pointerEvents="none">
+                <MaterialIcon name="near-me" size={14} color={colors.onSurfaceVariant} />
+                <Text style={styles.mapEmptyText}>
+                  No {activeChip.label.toLowerCase()}s nearby right now
+                </Text>
+              </View>
+            ) : null}
             <View style={styles.mapLegend}>
               <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: colors.accentRed }]} />
-                <Text style={styles.legendText}>Auto 2m</Text>
-              </View>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: colors.primary }]} />
-                <Text style={styles.legendText}>Cab 4m</Text>
+                <View style={[styles.legendDot, { backgroundColor: markerColorFor(activeChip.kinds[0]) }]} />
+                <Text style={styles.legendText}>{activeChip.label}</Text>
               </View>
             </View>
           </View>
@@ -859,30 +901,23 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     bottom: 0,
     backgroundColor: mapTheme.brandTint,
   },
-  pinWrap: {
+  mapEmpty: {
     position: 'absolute',
-  },
-  pin: {
-    position: 'relative',
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surfaceContainerLowest,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
-    justifyContent: 'center',
+    top: 10,
+    left: 10,
+    right: 10,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: radius.md,
+    backgroundColor: mapTheme.glass,
+    borderWidth: 1,
+    borderColor: mapTheme.glassBorder,
   },
-  pinDot: {
-    position: 'absolute',
-    bottom: -4,
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
+  mapEmptyText: { ...type.labelSm, color: colors.onSurfaceVariant },
   youWrap: {
     position: 'absolute',
     top: '50%',

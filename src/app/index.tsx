@@ -3,11 +3,15 @@ import { View, Text, StyleSheet, Animated } from 'react-native';
 import { useRouter } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import MaterialIcon from '../components/MaterialIcon';
+import { useAuth } from '../context/AuthContext';
 
 export default function SplashScreen() {
   const router = useRouter();
   const [scaleAnim] = useState(() => new Animated.Value(0.9));
   const [opacityAnim] = useState(() => new Animated.Value(0));
+
+  const { token, isLoading } = useAuth();
+  const [splashFinished, setSplashFinished] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
@@ -24,13 +28,23 @@ export default function SplashScreen() {
       })
     ]).start();
 
-    // Navigate to login after 2.5 seconds
+    // Mark splash as finished after 2.5 seconds
     const timer = setTimeout(() => {
-      router.replace('/login');
+      setSplashFinished(true);
     }, 2500);
 
     return () => clearTimeout(timer);
   }, [scaleAnim, opacityAnim]);
+
+  useEffect(() => {
+    if (splashFinished && !isLoading) {
+      if (token) {
+        router.replace('/(tabs)/home');
+      } else {
+        router.replace('/login');
+      }
+    }
+  }, [splashFinished, isLoading, token, router]);
 
   return (
     <LinearGradient

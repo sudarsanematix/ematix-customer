@@ -123,6 +123,16 @@ export default function ActiveRideScreen() {
   }, [ride?.status, pickupCoords, dropoffCoords, driverKey]);
 
   useEffect(() => {
+    if (ride?.status === 'completed') {
+      if (ride.type === 'parcel') {
+        router.replace(`/package-delivered?rideId=${rideId}`);
+      } else {
+        router.replace(`/ride-completed?rideId=${rideId}`);
+      }
+    }
+  }, [ride?.status, ride?.type, rideId, router]);
+
+  useEffect(() => {
     socketService.connect();
     socketService.emit('join_ride', { rideId, role: 'customer', userId: user?.id });
 
@@ -133,25 +143,10 @@ export default function ActiveRideScreen() {
       }
       setRide(data);
       setHasUnread(getUnread(data.id));
-      if (data.status === 'completed') {
-        if (data.type === 'parcel') {
-          router.replace(`/package-delivered?rideId=${rideId}`);
-        } else {
-          router.replace(`/ride-completed?rideId=${rideId}`);
-        }
-      }
     };
 
     const handleCompleted = () => {
-      // Need a way to know if it was a parcel from the latest ride state.
-      setRide((currentRide) => {
-        if (currentRide?.type === 'parcel') {
-          router.replace(`/package-delivered?rideId=${rideId}`);
-        } else {
-          router.replace(`/ride-completed?rideId=${rideId}`);
-        }
-        return currentRide;
-      });
+      setRide((prev) => (prev ? { ...prev, status: 'completed' } : prev));
     };
 
     const handleStatus = (data: { rideId: string; status: string }) => {

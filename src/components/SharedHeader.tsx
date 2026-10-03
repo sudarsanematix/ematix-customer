@@ -17,11 +17,6 @@ export default function SharedHeader({ currentScreen = 'home', title, onBackPres
 
   const router = useRouter();
 
-  const [modalVisible, setModalVisible] = useState(false);
-  const [location, setLocation] = useState('Downtown');
-  
-  const locations = ['Downtown', 'North Campus', 'South City', 'Tech Park', 'West End'];
-
   const isRootTab = ['home', 'orders', 'profile', 'ask-ematix'].includes(currentScreen);
   const displayTitle = title || currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1).replace('-', ' ');
 
@@ -63,17 +58,6 @@ export default function SharedHeader({ currentScreen = 'home', title, onBackPres
       </View>
 
       <View style={styles.rightSection}>
-        {isRootTab && (
-          <TouchableOpacity
-            style={styles.locationSelector}
-            activeOpacity={0.85}
-            onPress={() => setModalVisible(true)}
-          >
-            <MaterialIcon name="location-on" size={18} color={colors.primary} />
-            <Text style={styles.locationText} numberOfLines={1}>{location}</Text>
-            <MaterialIcon name="expand-more" size={16} color={colors.primary} />
-          </TouchableOpacity>
-        )}
         <TouchableOpacity
           onPress={toggleTheme}
           style={styles.themeBtn}
@@ -86,37 +70,6 @@ export default function SharedHeader({ currentScreen = 'home', title, onBackPres
           <MaterialIcon name="person" size={18} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
-
-      <Modal visible={modalVisible} transparent animationType="fade" onRequestClose={() => setModalVisible(false)}>
-        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setModalVisible(false)}>
-          <View style={styles.modalContent}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Choose Location</Text>
-              <TouchableOpacity onPress={() => setModalVisible(false)} hitSlop={10}>
-                <MaterialIcon name="close" size={24} color={colors.onSurface} />
-              </TouchableOpacity>
-            </View>
-            <FlatList 
-              data={locations}
-              keyExtractor={(item) => item}
-              renderItem={({ item }) => (
-                <TouchableOpacity 
-                  style={[styles.locationOption, location === item && styles.locationOptionSelected]}
-                  onPress={() => {
-                    setLocation(item);
-                    setModalVisible(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <MaterialIcon name="location-city" size={20} color={location === item ? colors.primary : colors.textMuted} />
-                  <Text style={[styles.locationOptionText, location === item && styles.locationOptionTextSelected]}>{item}</Text>
-                  {location === item && <MaterialIcon name="check" size={20} color={colors.primary} />}
-                </TouchableOpacity>
-              )}
-            />
-          </View>
-        </TouchableOpacity>
-      </Modal>
     </View>
   );
 }

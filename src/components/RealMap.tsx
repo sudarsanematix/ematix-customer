@@ -3,6 +3,7 @@ import { useTheme } from '../theme/ThemeProvider';
 import { buildMapTheme } from '../theme/mapTheme';
 import { StyleSheet, View, StyleProp, ViewStyle, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
+import { MARKER_IMAGES, MARKER_IMAGE_KEYS } from './markerImages';
 
 export type MapRegion = {
   latitude: number;
@@ -16,6 +17,7 @@ export type MapMarker = {
   latitude: number;
   longitude: number;
   color?: string; // Hex color or basic string like 'red', 'green'
+  vehicleType?: string;
 };
 
 export const CHENNAI_REGION: MapRegion = {
@@ -26,6 +28,17 @@ export const CHENNAI_REGION: MapRegion = {
 };
 
 const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+
+/**
+ * Shared empty defaults. A `[]` written inline in the destructuring signature
+ * allocates a new array on every render, which would invalidate every `useMemo`
+ * below and hand `source={{ html }}` a fresh string each time — and
+ * react-native-webview reloads the whole page (Mapbox style + sprite refetch)
+ * whenever `source` changes. That made the radar blank out on every parent
+ * re-render and on every chip tap.
+ */
+const NO_MARKERS: MapMarker[] = [];
+const NO_COORDINATES: [number, number][] = [];
 
 export type MapPadding = { top?: number; bottom?: number; left?: number; right?: number } | number;
 
@@ -42,17 +55,17 @@ interface RealMapProps {
   onRegionChange?: (region: { latitude: number, longitude: number }) => void;
 }
 
-export default function RealMap({ 
-  style, 
-  region = CHENNAI_REGION, 
-  interactive = false, 
-  markers = [], 
-  routeCoordinates = [], 
-  showUserLocation = false, 
-  pulseMarker, 
-  mapPadding, 
-  children, 
-  onRegionChange 
+export default function RealMap({
+  style,
+  region = CHENNAI_REGION,
+  interactive = false,
+  markers = NO_MARKERS,
+  routeCoordinates = NO_COORDINATES,
+  showUserLocation = false,
+  pulseMarker,
+  mapPadding,
+  children,
+  onRegionChange
 }: RealMapProps) {
   const { isDark } = useTheme();
   const theme = useMemo(() => buildMapTheme(isDark), [isDark]);
@@ -60,6 +73,8 @@ export default function RealMap({
   const bootRegionRef = useRef(region);
   const regionKey = JSON.stringify(region);
   const markersKey = JSON.stringify(markers);
+  // Content-keyed, so callers can pass an inline array without a reload.
+  const routeKey = JSON.stringify(routeCoordinates);
 
   const isWebViewReady = useRef(false);
   const pendingInjections = useRef<string[]>([]);
@@ -72,45 +87,14 @@ export default function RealMap({
     }
   };
 
-  const markersJs = useMemo(() => {
-    return markers.map(marker => {
-      if (marker.id === 'me') {
-        return `
-          var el = document.createElement('div');
-          el.className = 'customer-marker-wrapper';
-          el.innerHTML = \`
-            <div class="customer-beacon">
-              <div class="customer-beacon-label">You are here</div>
-              <div class="customer-beacon-stem"></div>
-              <div class="customer-beacon-base">
-                <div class="customer-beacon-halo"></div>
-                <div class="customer-beacon-base-inner"></div>
-              </div>
-            </div>
-            <div class="customer-beacon-shadow"></div>
-          \`;
-          new mapboxgl.Marker({ element: el, anchor: 'bottom' })
-            .setLngLat([${marker.longitude}, ${marker.latitude}])
-            .addTo(map);
-        `;
-      } else {
-        return `
-          new mapboxgl.Marker({ color: '${marker.color || '#000000'}' })
-            .setLngLat([${marker.longitude}, ${marker.latitude}])
-            .addTo(map);
-        `;
-      }
-    }).join('\n');
-  }, [markersKey]);
-
   React.useEffect(() => {
     safeInject(`
-      if (window.updateMarkers) {
-         window.updateMarkers(\`${markersJs.replace(/`/g, '\\`')}\`);
+      if (window.renderMarkers) {
+        window.renderMarkers(${JSON.stringify(markers)});
       }
       true;
     `);
-  }, [markersJs]);
+  }, [markersKey]);
 
   React.useEffect(() => {
     const zoom = Math.round(Math.log(360 / region.longitudeDelta) / Math.LN2) || 12;
@@ -166,8 +150,6 @@ export default function RealMap({
       `;
     }
 
-    const geolocateJs = '';
-
     // Pulse Marker JS
     let pulseJs = '';
     if (pulseMarker) {
@@ -180,8 +162,6 @@ export default function RealMap({
       `;
     }
 
-    // Determine Mapbox Zoom based on latitudeDelta
-    // Approximate zoom level calculation
     const zoom = Math.round(Math.log(360 / region.longitudeDelta) / Math.LN2) || 12;
 
     return `
@@ -330,6 +310,8 @@ export default function RealMap({
       <body>
       <div id="map"></div>
       <script>
+      window.MARKER_IMAGES = ${JSON.stringify(MARKER_IMAGES)};
+      window.MARKER_IMAGE_KEYS = ${JSON.stringify(MARKER_IMAGE_KEYS)};
       mapboxgl.accessToken = '${MAPBOX_TOKEN}';
       const map = new mapboxgl.Map({
           container: 'map',
@@ -350,20 +332,81 @@ export default function RealMap({
         }
       };
 
-      window.updateMarkers = function(script) {
-        if (typeof map !== 'undefined' && map.isStyleLoaded()) {
-          // In a real app we'd track and remove old markers.
-          // For now, eval handles the simple rendering
-          try { eval(script); } catch(e) {}
-        } else {
-          // If not loaded, they are already in the boot HTML, so no-op
+      window.currentMarkers = window.currentMarkers || {};
+      // Markers are never baked into the HTML: that would change \`source\` on
+      // every \`partner_location_updated\` ping and reload the whole map. The
+      // effect above pushes them through \`renderMarkers\`, which parks them in
+      // \`pendingMarkersData\` whenever the style is still loading.
+
+      window.renderMarkers = function(markersData) {
+        if (typeof map === 'undefined' || !map.isStyleLoaded()) {
+          window.pendingMarkersData = markersData;
+          return;
         }
+
+        if (window.currentMarkers) {
+          Object.keys(window.currentMarkers).forEach(function(key) {
+            if (window.currentMarkers[key]) {
+              try { window.currentMarkers[key].remove(); } catch(e) {}
+            }
+          });
+        }
+        window.currentMarkers = {};
+
+        if (!Array.isArray(markersData)) return;
+
+        markersData.forEach(function(m) {
+          if (!m || typeof m.latitude !== 'number' || typeof m.longitude !== 'number') return;
+          if (isNaN(m.latitude) || isNaN(m.longitude)) return;
+
+          try {
+            if (m.id === 'me') {
+              var el = document.createElement('div');
+              el.className = 'customer-marker-wrapper';
+              el.innerHTML = '<div class="customer-beacon"><div class="customer-beacon-label">You are here</div><div class="customer-beacon-stem"></div><div class="customer-beacon-base"><div class="customer-beacon-halo"></div><div class="customer-beacon-base-inner"></div></div></div><div class="customer-beacon-shadow"></div>';
+              var marker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+                .setLngLat([m.longitude, m.latitude])
+                .addTo(map);
+              window.currentMarkers[m.id] = marker;
+            } else if (m.vehicleType) {
+              var keys = window.MARKER_IMAGE_KEYS || {};
+              var imgKey = keys[m.vehicleType] || keys[String(m.vehicleType).toLowerCase()] || 'car';
+              var imgUrl = (window.MARKER_IMAGES && window.MARKER_IMAGES[imgKey]) || (window.MARKER_IMAGES && window.MARKER_IMAGES.car);
+              if (!imgUrl) return;
+              var vEl = document.createElement('div');
+              vEl.className = 'vehicle-marker';
+              vEl.style.backgroundImage = "url('" + imgUrl + "')";
+              vEl.style.width = '48px';
+              vEl.style.height = '48px';
+              vEl.style.backgroundSize = 'contain';
+              vEl.style.backgroundRepeat = 'no-repeat';
+              vEl.style.backgroundPosition = 'center';
+              vEl.style.filter = 'drop-shadow(0px 4px 6px rgba(0,0,0,0.3))';
+
+              var vMarker = new mapboxgl.Marker({ element: vEl })
+                .setLngLat([m.longitude, m.latitude])
+                .addTo(map);
+              window.currentMarkers[m.id] = vMarker;
+            } else {
+              var cMarker = new mapboxgl.Marker({ color: m.color || '#000000' })
+                .setLngLat([m.longitude, m.latitude])
+                .addTo(map);
+              window.currentMarkers[m.id] = cMarker;
+            }
+          } catch(err) {
+            console.error('Error rendering marker:', m, err);
+          }
+        });
       };
 
       map.on('load', () => {
          if (targetCenter) {
             map.flyTo({ center: targetCenter, zoom: targetZoom, speed: 1.2 });
             targetCenter = null;
+         }
+         if (window.pendingMarkersData) {
+            window.renderMarkers(window.pendingMarkersData);
+            window.pendingMarkersData = null;
          }
       });
 
@@ -373,25 +416,27 @@ export default function RealMap({
           window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'regionChange', latitude: center.lat, longitude: center.lng }));
         }
       });
-      ${markersJs}
       ${routeJs}
-      ${geolocateJs}
       ${pulseJs}
       </script>
       </body>
       </html>
     `;
+    // `routeCoordinates` is inlined into `routeJs`, so a route change must
+    // invalidate this memo; `routeKey` is its content key, not its identity, so
+    // an inline array from the caller does not force a reload. Markers are
+    // intentionally excluded - they are pushed in via `renderMarkers`.
     // RealMap has no command bridge, so the theme is baked in and the WebView
     // re-keys on toggle. That is fine here: it is a static preview map, never a
     // live ride whose camera or follow mode would be lost.
-  }, [interactive, routeCoordinates, showUserLocation, pulseMarker, theme]);
+  }, [interactive, routeKey, showUserLocation, pulseMarker, theme]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.base }, style]}>
-      <WebView 
+      <WebView
         ref={webViewRef}
         key={isDark ? 'dark' : 'light'}
-        source={{ html: htmlContent, baseUrl: 'https://localhost/' }} 
+        source={{ html: htmlContent, baseUrl: 'https://localhost/' }}
         style={StyleSheet.absoluteFill}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
@@ -400,6 +445,12 @@ export default function RealMap({
         scrollEnabled={false}
         overScrollMode="never"
         geolocationEnabled={true}
+        onLoadStart={() => {
+          // The document is being replaced, so `injectJavaScript` would be a
+          // no-op at best and land in the discarded context at worst. Queue
+          // instead, `onLoadEnd` replays the queue against the new document.
+          isWebViewReady.current = false;
+        }}
         onLoadEnd={() => {
           isWebViewReady.current = true;
           if (webViewRef.current && pendingInjections.current.length > 0) {
@@ -413,7 +464,7 @@ export default function RealMap({
             if (data.type === 'regionChange' && onRegionChange) {
               onRegionChange({ latitude: data.latitude, longitude: data.longitude });
             }
-          } catch (e) {}
+          } catch (e) { }
         }}
       />
       {children ? (

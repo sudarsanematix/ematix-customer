@@ -203,9 +203,24 @@ export default function ProfileScreen() {
       showToast('Name and Address are required');
       return;
     }
+
+    let lat, lng;
+    try {
+      const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(newAddressText.trim())}.json?access_token=${MAPBOX_TOKEN}&limit=1`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.features && data.features.length > 0) {
+        lng = data.features[0].center[0];
+        lat = data.features[0].center[1];
+      }
+    } catch (e) {
+      console.warn('Geocoding failed for saved address', e);
+    }
+
     try {
       const currentLocs = user?.savedLocations || [];
-      const updated = [...currentLocs, { name: newAddressName.trim(), address: newAddressText.trim() }];
+      const updated = [...currentLocs, { name: newAddressName.trim(), address: newAddressText.trim(), lat, lng }];
       const res = await fetch('http://192.168.1.34:4000/api/auth/customer/saved-locations', {
         method: 'POST',
         headers: {

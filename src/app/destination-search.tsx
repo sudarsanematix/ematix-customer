@@ -418,9 +418,28 @@ export default function DestinationSearchScreen() {
                       key={chip.title}
                       style={styles.savedChip}
                       activeOpacity={0.8}
-                      onPress={() => {
-                        const lat = chip.lat || (myLocation ? myLocation.latitude : 13.0450);
-                        const lng = chip.lng || (myLocation ? myLocation.longitude : 80.2310);
+                      onPress={async () => {
+                        let lat = chip.lat;
+                        let lng = chip.lng;
+
+                        // Geocode on the fly if missing (backward compatibility)
+                        if (!lat || !lng) {
+                          try {
+                            const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encodeURIComponent(chip.address)}.json?access_token=${MAPBOX_TOKEN}&limit=1`;
+                            const res = await fetch(url);
+                            const data = await res.json();
+                            if (data.features && data.features.length > 0) {
+                              lng = data.features[0].center[0];
+                              lat = data.features[0].center[1];
+                            }
+                          } catch (e) {
+                            console.warn('Geocoding fallback failed', e);
+                          }
+                        }
+
+                        // Final fallback to current location or default
+                        lat = lat || (myLocation ? myLocation.latitude : 13.0450);
+                        lng = lng || (myLocation ? myLocation.longitude : 80.2310);
                         
                         if (focusedField === 'pickup') {
                           setPickup(chip.title);

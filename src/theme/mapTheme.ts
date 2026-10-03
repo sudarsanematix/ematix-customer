@@ -6,8 +6,8 @@ import { darkColors, lightColors } from './colors';
  * palette changes. Both are stock styles: no `styles:read`/`styles:write`
  * token scope and no Studio-authored style ID to keep in sync.
  */
-export const LIVE_MAP_LIGHT_STYLE = 'mapbox://styles/mapbox/navigation-day-v1';
-export const LIVE_MAP_DARK_STYLE = 'mapbox://styles/mapbox/navigation-night-v1';
+export const LIVE_MAP_LIGHT_STYLE = 'mapbox://styles/mapbox/streets-v12';
+export const LIVE_MAP_DARK_STYLE = 'mapbox://styles/mapbox/dark-v11';
 
 export type MapThemeTokens = {
   /** Lets the WebView resolve per-kind vehicle colors without a second lookup. */

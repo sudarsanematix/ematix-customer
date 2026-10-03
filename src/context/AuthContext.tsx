@@ -14,6 +14,7 @@ type User = {
 type AuthContextType = {
   user: User | null;
   token: string | null;
+  isLoading: boolean;
   login: (userData: User, authToken: string) => Promise<void>;
   logout: () => Promise<void>;
 };
@@ -23,6 +24,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     // Load auth state from storage on startup
@@ -30,15 +32,27 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const storedToken = await AsyncStorage.getItem('@ematix_token');
         const storedUser = await AsyncStorage.getItem('@ematix_user');
-        if (storedToken && storedUser) {
-          setToken(storedToken);
-          setUser(JSON.parse(storedUser));
-          // The socket handshake requires this token, so it must be handed
-          // over before any ride screen mounts.
-          socketService.setToken(storedToken);
+        const storedTimestamp = await AsyncStorage.getItem('@ematix_login_timestamp');
+
+        if (storedToken && storedUser && storedTimestamp) {
+          const timestamp = parseInt(storedTimestamp, 10);
+          const fiveDaysInMs = 5 * 24 * 60 * 60 * 1000;
+          
+          if (Date.now() - timestamp <= fiveDaysInMs) {
+            setToken(storedToken);
+            setUser(JSON.parse(storedUser));
+            // The socket handshake requires this token, so it must be handed
+            // over before any ride screen mounts.
+            socketService.setToken(storedToken);
+          } else {
+            // Token expired based on local 5-day rule
+            await AsyncStorage.multiRemove(['@ematix_token', '@ematix_user', '@ematix_login_timestamp']);
+          }
         }
       } catch (e) {
         console.error('Failed to load auth state', e);
+      } finally {
+        setIsLoading(false);
       }
     };
     loadAuth();
@@ -49,20 +63,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(authToken);
     await AsyncStorage.setItem('@ematix_token', authToken);
     await AsyncStorage.setItem('@ematix_user', JSON.stringify(userData));
+    await AsyncStorage.setItem('@ematix_login_timestamp', Date.now().toString());
     socketService.setToken(authToken);
   };
 
   const logout = async () => {
     setUser(null);
     setToken(null);
-    await AsyncStorage.removeItem('@ematix_token');
-    await AsyncStorage.removeItem('@ematix_user');
+    await AsyncStorage.multiRemove(['@ematix_token', '@ematix_user', '@ematix_login_timestamp']);
     socketService.disconnect();
     socketService.setToken(null);
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
