@@ -1,14 +1,15 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, ActivityIndicator } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Circle, Path } from 'react-native-svg';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
-import RealMap from '../components/RealMap';
+import LiveMap, { type LiveMapHandle, type LiveVehicle, type LiveVehicleKind, type LngLat, type LivePin } from '../components/LiveMap';
 import { socketService } from '../utils/socket';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../theme/ThemeProvider';
+import { buildMapTheme, type MapThemeTokens } from '../theme/mapTheme';
 import { fonts, type } from '../theme/typography';
 
 type RideData = {
@@ -17,8 +18,16 @@ type RideData = {
   status?: string;
   otp?: string | null;
   price?: number | string | null;
-  pickup?: { address?: string } | null;
-  dropoff?: { address?: string } | null;
+  pickup?: { address?: string; lat?: number; lng?: number } | null;
+  dropoff?: { address?: string; lat?: number; lng?: number } | null;
+  packageDetails?: {
+    category?: string;
+    weightTier?: string;
+    fragile?: boolean;
+    receiverName?: string;
+    receiverPhone?: string;
+    notes?: string;
+  } | null;
   partner?: {
     id: string;
     name?: string;
@@ -31,8 +40,8 @@ type RideData = {
 };
 
 function PingRing() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, buildMapTheme(isDark));
   const [anim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -53,8 +62,9 @@ function PingRing() {
 }
 
 export default function PackageAssignedScreen() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
+  const styles = createStyles(colors, mapTheme);
   const router = useRouter();
   const { user } = useAuth();
   const { rideId: routeRideId, otp: routeOtp } = useLocalSearchParams<{ rideId?: string; otp?: string }>();
@@ -62,6 +72,43 @@ export default function PackageAssignedScreen() {
   const [otp, setOtp] = useState<string>(routeOtp || '');
   const [ride, setRide] = useState<RideData | null>(null);
   const [unavailable, setUnavailable] = useState(false);
+
+  const [driver, setDriver] = useState<LiveVehicle | null>(null);
+  const [follow, setFollow] = useState(true);
+  const [routeCoords, setRouteCoords] = useState<LngLat[]>([]);
+  const mapRef = useRef<LiveMapHandle | null>(null);
+
+  const getLocCoords = (loc: any) => {
+    if (!loc) return null;
+    const lat = loc.latitude ?? loc.lat;
+    const lng = loc.longitude ?? loc.lng;
+    const parsedLat = typeof lat === 'number' ? lat : parseFloat(lat);
+    const parsedLng = typeof lng === 'number' ? lng : parseFloat(lng);
+    if (!isNaN(parsedLat) && !isNaN(parsedLng)) return [parsedLng, parsedLat] as LngLat;
+    return null;
+  };
+
+  const pickupCoords = useMemo(() => getLocCoords(ride?.pickup), [ride?.pickup]);
+  const driverKey = driver ? `${driver.lngLat[0].toFixed(3)},${driver.lngLat[1].toFixed(3)}` : 'none';
+
+  useEffect(() => {
+    if (!pickupCoords) return;
+    let start: LngLat = driver ? driver.lngLat : pickupCoords;
+    let end: LngLat = pickupCoords;
+    let cancelled = false;
+    if (start[0] !== end[0] || start[1] !== end[1]) {
+      (async () => {
+        try {
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${start[0]},${start[1]};${end[0]},${end[1]}?geometries=geojson&access_token=${process.env.EXPO_PUBLIC_MAPBOX_TOKEN}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const coords = data.routes?.[0]?.geometry?.coordinates;
+        if (!cancelled && coords?.length) setRouteCoords(coords);
+      } catch (e) { }
+    })();
+    }
+    return () => { cancelled = true; };
+  }, [pickupCoords, driverKey]);
 
   const rideIdRef = useRef(rideId);
   useEffect(() => {
@@ -129,6 +176,16 @@ export default function PackageAssignedScreen() {
       }
     };
 
+    const onDriverLocation = (data: any) => {
+      if (data.rideId !== rideIdRef.current) return;
+      if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
+      setDriver((prev) => ({
+        lngLat: [data.lng, data.lat],
+        bearing: typeof data.bearing === 'number' ? data.bearing : prev?.bearing,
+        kind: 'auto',
+      }));
+    };
+
     socketService.on('ride_requested', onRideRequested);
     socketService.on('ride_accepted', onRideAccepted);
     socketService.on('ride_details', onRideDetails);
@@ -136,6 +193,7 @@ export default function PackageAssignedScreen() {
     socketService.on('ride_started', onStarted);
     socketService.on('ride_completed', onCompleted);
     socketService.on('ride_error', onError);
+    socketService.on('driver_location', onDriverLocation);
 
     return () => {
       socketService.off('ride_requested', onRideRequested);
@@ -145,8 +203,17 @@ export default function PackageAssignedScreen() {
       socketService.off('ride_started', onStarted);
       socketService.off('ride_completed', onCompleted);
       socketService.off('ride_error', onError);
+      socketService.off('driver_location', onDriverLocation);
     };
   }, [router, user?.id]);
+
+  const pins: LivePin[] = useMemo(() => {
+    const arr: LivePin[] = [];
+    if (pickupCoords) {
+      arr.push({ id: 'pickup', lngLat: pickupCoords, color: mapTheme.routeDone, variant: 'dot' });
+    }
+    return arr;
+  }, [pickupCoords, mapTheme]);
 
   useEffect(() => {
     if (rideId) socketService.joinRide(rideId, 'customer', user?.id);
@@ -222,24 +289,16 @@ export default function PackageAssignedScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         {/* Map Context Section */}
         <View style={styles.mapContainer}>
-          <RealMap interactive style={styles.mapImage}>
-            <View style={styles.mapOverlay} pointerEvents="none" />
-
-            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 320" preserveAspectRatio="xMidYMid slice" pointerEvents="none">
-              <Path d="M 90 270 Q 140 210 195 180 T 270 110" stroke="#0033B1" strokeDasharray="6 6" strokeLinecap="round" strokeWidth="4" opacity={0.8} />
-              <Circle cx={270} cy={110} r={18} fill="#0033B1" fillOpacity={0.15} />
-              <Circle cx={270} cy={110} r={8} fill="#0033B1" />
-              <Circle cx={270} cy={110} r={3} fill="#ffffff" />
-            </Svg>
-
-            {/* Moving Delivery Partner Node */}
-            <View style={styles.movingNode}>
-              <PingRing />
-              <View style={styles.movingDot}>
-                <MaterialIcon name="navigation" size={16} color={colors.onPrimary} />
-              </View>
-            </View>
-
+          <LiveMap
+            ref={mapRef}
+            interactive
+            style={styles.mapImage}
+            vehicle={driver}
+            follow={follow}
+            route={{ coordinates: routeCoords }}
+            pins={pins}
+            onUserMove={() => setFollow(false)}
+          >
             {/* Top Floating Status Pill + Recenter */}
             <View style={styles.topPillRow}>
               <View style={styles.statusPill}>
@@ -249,7 +308,7 @@ export default function PackageAssignedScreen() {
                 </View>
                 <Text style={styles.statusPillText}>{headerPillText}</Text>
               </View>
-              <TouchableOpacity style={styles.recenterBtn} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.recenterBtn} activeOpacity={0.85} onPress={() => { setFollow(true); mapRef.current?.focusVehicle(); }}>
                 <MaterialIcon name="my-location" size={20} color={colors.primary} />
               </TouchableOpacity>
             </View>
@@ -261,13 +320,13 @@ export default function PackageAssignedScreen() {
               </View>
               <View style={styles.geoTextCol}>
                 <Text style={styles.geoLabel}>Pickup Location</Text>
-                <Text style={styles.geoAddress} numberOfLines={1}>Greenways Road, RA Puram, Chennai</Text>
+                <Text style={styles.geoAddress} numberOfLines={1}>{ride?.pickup?.address || 'Pickup Point'}</Text>
               </View>
               <View style={styles.geoDistancePill}>
-                <Text style={styles.geoDistanceText}>0.8 km</Text>
+                <Text style={styles.geoDistanceText}>Live</Text>
               </View>
             </View>
-          </RealMap>
+          </LiveMap>
         </View>
 
         {/* Content Stream */}
@@ -426,11 +485,15 @@ export default function PackageAssignedScreen() {
                 <MaterialIcon name="inventory-2" size={24} color={colors.primary} />
               </View>
               <View style={styles.packageInfo}>
-                <Text style={styles.packageTitle} numberOfLines={1}>Electronics: Laptop Charger &amp; Documents</Text>
+                <Text style={styles.packageTitle} numberOfLines={1}>{ride?.packageDetails?.category || 'General'} Package</Text>
                 <View style={styles.packageMetaRow}>
-                  <Text style={styles.packageMeta}>Weight &lt; 5 kg</Text>
-                  <View style={styles.metaDot} />
-                  <Text style={styles.packageMetaPrimary}>Fragile Care</Text>
+                  <Text style={styles.packageMeta}>Weight {ride?.packageDetails?.weightTier === 'large' ? '> 20' : ride?.packageDetails?.weightTier === 'medium' ? '5-20' : '< 5'} kg</Text>
+                  {ride?.packageDetails?.fragile && (
+                    <>
+                      <View style={styles.metaDot} />
+                      <Text style={styles.packageMetaPrimary}>Fragile Care</Text>
+                    </>
+                  )}
                 </View>
               </View>
             </View>
@@ -444,7 +507,7 @@ export default function PackageAssignedScreen() {
                 <View style={styles.routeInfo}>
                   <Text style={styles.routeLabel}>Sender</Text>
                   <Text style={styles.routeName}>
-                    Alex (You) <Text style={styles.routeMuted}>• Flat 4B, Emerald Court</Text>
+                    You <Text style={styles.routeMuted}>• {ride?.pickup?.address || 'Pickup Location'}</Text>
                   </Text>
                 </View>
               </View>
@@ -455,9 +518,9 @@ export default function PackageAssignedScreen() {
                 <View style={styles.routeInfo}>
                   <Text style={styles.routeLabel}>Receiver</Text>
                   <Text style={styles.routeName}>
-                    Priya Sharma <Text style={styles.routePhone}>• +91 98765 43210</Text>
+                    {ride?.packageDetails?.receiverName || 'Recipient'} <Text style={styles.routePhone}>• {ride?.packageDetails?.receiverPhone}</Text>
                   </Text>
-                  <Text style={styles.routeMuted}>Adyar, Chennai (7.4 km)</Text>
+                  <Text style={styles.routeMuted}>{ride?.dropoff?.address || 'Dropoff Location'}</Text>
                 </View>
               </View>
             </View>
@@ -518,7 +581,7 @@ export default function PackageAssignedScreen() {
   );
 }
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,
@@ -541,7 +604,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 33, 124, 0.1)',
+    backgroundColor: mapTheme.brandTint,
   },
   movingNode: {
     position: 'absolute',
@@ -559,13 +622,13 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
-    backgroundColor: '#0033B1',
+    backgroundColor: mapTheme.routeDone,
   },
   movingDot: {
     width: 30,
     height: 30,
     borderRadius: 15,
-    backgroundColor: '#0033B1',
+    backgroundColor: mapTheme.routeDone,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -587,7 +650,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: mapTheme.glass,
     paddingHorizontal: 14,
     paddingVertical: 8,
     borderRadius: 999,
@@ -631,7 +694,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: mapTheme.glass,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -648,7 +711,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: mapTheme.glass,
     padding: 10,
     borderRadius: 12,
     shadowColor: '#000',
@@ -725,7 +788,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     letterSpacing: 1,
   },
   encryptedPill: {
-    backgroundColor: 'rgba(0, 33, 124, 0.4)',
+    backgroundColor: mapTheme.washSubtle,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 6,
@@ -738,7 +801,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(0, 33, 124, 0.6)',
+    backgroundColor: mapTheme.washStrong,
     padding: 12,
     borderRadius: 10,
   },

@@ -1,29 +1,87 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert, Animated, Easing, Image } from 'react-native';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { View, Text, StyleSheet, TouchableOpacity, Alert, Animated, Easing, Share } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import Svg, { Path } from 'react-native-svg';
+import * as Linking from 'expo-linking';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
-import RealMap from '../components/RealMap';
+import LiveMap, { type LiveMapHandle, type LiveVehicle, type LngLat, type LivePin } from '../components/LiveMap';
 import DraggableSheet from '../components/DraggableSheet';
 import { useTheme } from '../theme/ThemeProvider';
+import { buildMapTheme, type MapThemeTokens } from '../theme/mapTheme';
 import { fonts, type } from '../theme/typography';
 import { socketService } from '../utils/socket';
 import { useAuth } from '../context/AuthContext';
+import { telLink } from '../utils/phone';
 
 type RideData = {
   id?: string;
+  type?: string;
+  status?: string;
+  otp?: string | null;
+  pickup?: { address?: string; lat?: number; lng?: number } | null;
+  dropoff?: { address?: string; lat?: number; lng?: number } | null;
+  packageDetails?: {
+    category?: string;
+    weightTier?: string;
+    fragile?: boolean;
+    receiverName?: string;
+    receiverPhone?: string;
+    notes?: string;
+  } | null;
   partner?: {
+    id?: string;
     name?: string;
+    phone?: string;
     vehicleType?: string;
     vehicleNumber?: string;
+    vehicleModel?: string;
+    rating?: number | null;
   } | null;
+  createdAt?: string;
+  acceptedAt?: string;
+  arrivedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  receiverOtp?: string;
+};
+
+// An env override wins; the LAN address stays as the dev fallback until the
+// shared `utils/api.ts` layer from the roadmap lands.
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+
+const fmtTime = (value?: string | number | null): string => {
+  if (value == null || value === '') return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const initialsOf = (name?: string | null): string => {
+  if (!name) return 'P';
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => (w[0] ? w[0].toUpperCase() : ''))
+      .join('') || 'P'
+  );
+};
+
+// Rail fill per status, following the order the three steps are drawn in.
+const RAIL_PCT: Record<string, number> = {
+  pending: 8,
+  accepted: 20,
+  en_route_pickup: 35,
+  arrived: 50,
+  en_route_dropoff: 72,
+  completed: 100,
 };
 
 function BounceMarker() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, buildMapTheme(isDark));
   const [bounce] = useState(() => new Animated.Value(0));
   const [ping] = useState(() => new Animated.Value(0));
 
@@ -70,8 +128,8 @@ function BounceMarker() {
 }
 
 function PulseDot() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, buildMapTheme(isDark));
   const [anim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -97,13 +155,111 @@ function PulseDot() {
 }
 
 export default function PackageTransitScreen() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
+  const styles = createStyles(colors, mapTheme);
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const { rideId } = useLocalSearchParams<{ rideId?: string }>();
   const [ride, setRide] = useState<RideData | null>(null);
   const [shareCopied, setShareCopied] = useState(false);
+  const [unavailable, setUnavailable] = useState(false);
+
+  const [driver, setDriver] = useState<LiveVehicle | null>(null);
+  const [follow, setFollow] = useState(true);
+  const [routeCoords, setRouteCoords] = useState<LngLat[]>([]);
+  const [etaAt, setEtaAt] = useState<number | null>(null);
+  const [etaMeters, setEtaMeters] = useState<number | null>(null);
+  const [lastFixAt, setLastFixAt] = useState<number | null>(null);
+  const [now, setNow] = useState(() => Date.now());
+  const mapRef = useRef<LiveMapHandle | null>(null);
+
+  // Drives the ETA countdown and the "live GPS" freshness check without
+  // re-rendering the map every second.
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  const getLocCoords = (loc: any) => {
+    if (!loc) return null;
+    const lat = loc.latitude ?? loc.lat;
+    const lng = loc.longitude ?? loc.lng;
+    const parsedLat = typeof lat === 'number' ? lat : parseFloat(lat);
+    const parsedLng = typeof lng === 'number' ? lng : parseFloat(lng);
+    if (!isNaN(parsedLat) && !isNaN(parsedLng)) return [parsedLng, parsedLat] as LngLat;
+    return null;
+  };
+
+  const pickupCoords = useMemo(() => getLocCoords(ride?.pickup), [ride?.pickup]);
+  const dropoffCoords = useMemo(() => getLocCoords(ride?.dropoff), [ride?.dropoff]);
+  const driverKey = driver ? `${driver.lngLat[0].toFixed(3)},${driver.lngLat[1].toFixed(3)}` : 'none';
+
+  useEffect(() => {
+    if (!ride?.status || !pickupCoords || !dropoffCoords) return;
+    if (ride.status === 'completed' || ride.status === 'cancelled') return;
+
+    const toPickup = ['pending', 'accepted', 'en_route_pickup'].includes(ride.status);
+    const start: LngLat = driver ? driver.lngLat : pickupCoords;
+    const end: LngLat = toPickup && driver ? pickupCoords : dropoffCoords;
+    if (start[0] === end[0] && start[1] === end[1]) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${start[0]},${start[1]};${end[0]},${end[1]}?geometries=geojson&access_token=${process.env.EXPO_PUBLIC_MAPBOX_TOKEN}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (cancelled) return;
+        const route = data.routes?.[0];
+        if (route?.geometry?.coordinates?.length) setRouteCoords(route.geometry.coordinates);
+        else console.warn('Directions failed', data.code, data.message);
+
+        // The arrival clock only means something on the driver -> dropoff leg.
+        // The pre-pickup leg's duration is time to the *pickup*, so showing it
+        // as the delivery ETA would be wrong.
+        if (ride.status === 'en_route_dropoff' && typeof route?.duration === 'number') {
+          setEtaAt(Date.now() + route.duration * 1000);
+          setEtaMeters(typeof route.distance === 'number' ? route.distance : null);
+        } else {
+          setEtaAt(null);
+          setEtaMeters(null);
+        }
+      } catch (e) {
+        console.warn('Route fetch failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ride?.status, pickupCoords, dropoffCoords, driverKey]);
+
+  // Socket-free fallback: a cold open, a rejoin after a server restart or a
+  // dropped connection still paints the real ride instead of an empty sheet.
+  useEffect(() => {
+    if (!rideId || !token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/rides/${rideId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (res.status === 403 || res.status === 404) {
+          if (!cancelled) setUnavailable(true);
+          return;
+        }
+        if (!res.ok) return;
+        // The endpoint returns the serialized ride directly (see
+        // GET /api/rides/:rideId), same shape ride-completed.tsx consumes.
+        const data: RideData | null = await res.json();
+        if (cancelled || !data) return;
+        // Live socket data always wins over the REST snapshot.
+        setRide((prev) => prev ?? data);
+        if (data.status === 'completed') router.replace(`/package-delivered?rideId=${rideId}`);
+      } catch (e) {
+        console.warn('Ride REST fallback failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rideId, token, router]);
 
   useEffect(() => {
     socketService.connect();
@@ -113,46 +269,192 @@ export default function PackageTransitScreen() {
       if (!data) return;
       if (rideId && data.id && data.id !== rideId) return;
       setRide(data);
+      if (data.status === 'completed') router.replace(`/package-delivered?rideId=${rideId}`);
     };
 
     const onCompleted = (data: any) => {
       if (rideId && data?.id && data.id !== rideId) return;
-      console.log('Parcel delivered!');
-      router.replace('/package-delivered');
+      router.replace(`/package-delivered?rideId=${rideId}`);
+    };
+
+    // Guarded by rideId: the room is shared with the partner app, so a stale
+    // ride's status must never rewrite this screen.
+    const onStatus = (data: any) => {
+      if (data?.rideId && data.rideId !== rideId) return;
+      setRide((prev) =>
+        prev
+          ? {
+            ...prev,
+            status: data?.status ?? prev.status,
+            ...(data?.arrivedAt ? { arrivedAt: data.arrivedAt } : null),
+          }
+          : prev
+      );
+    };
+
+    const onStarted = (data: any) => {
+      if (data?.rideId && data.rideId !== rideId) return;
+      setRide((prev) =>
+        prev
+          ? { ...prev, status: data?.status ?? prev.status, startedAt: data?.startedAt ?? prev.startedAt }
+          : prev
+      );
+    };
+
+    const onError = (data: { code: string; rideId?: string }) => {
+      if (data?.rideId === rideId && (data.code === 'ride_not_found' || data.code === 'unauthorized')) {
+        setUnavailable(true);
+      }
+    };
+
+    const onDriverLocation = (data: any) => {
+      if (data.rideId !== rideId) return;
+      if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
+      setLastFixAt(Date.now());
+      setDriver((prev) => ({
+        lngLat: [data.lng, data.lat],
+        bearing: typeof data.bearing === 'number' ? data.bearing : prev?.bearing,
+        kind: 'auto',
+      }));
     };
 
     socketService.on('ride_details', onDetails);
+    socketService.on('ride_status_updated', onStatus);
+    socketService.on('ride_started', onStarted);
     socketService.on('ride_completed', onCompleted);
+    socketService.on('ride_error', onError);
+    socketService.on('driver_location', onDriverLocation);
 
     return () => {
       socketService.off('ride_details', onDetails);
+      socketService.off('ride_status_updated', onStatus);
+      socketService.off('ride_started', onStarted);
       socketService.off('ride_completed', onCompleted);
+      socketService.off('ride_error', onError);
+      socketService.off('driver_location', onDriverLocation);
     };
   }, [router, rideId, user?.id]);
 
-  const partnerName = ride?.partner?.name || 'Suresh Kumar';
-  const partnerMeta = `${ride?.partner?.vehicleType || 'Two Wheeler'} \u2022 ${ride?.partner?.vehicleNumber || 'TN 07 BV 4120'}`;
+  const pins: LivePin[] = useMemo(() => {
+    const arr: LivePin[] = [];
+    if (pickupCoords && ride?.status !== 'en_route_dropoff' && ride?.status !== 'completed') {
+      arr.push({ id: 'pickup', lngLat: pickupCoords, color: mapTheme.routeDone, variant: 'dot' });
+    }
+    if (dropoffCoords) {
+      arr.push({ id: 'dropoff', lngLat: dropoffCoords, color: mapTheme.success, variant: ride?.status === 'en_route_dropoff' ? 'dot' : 'end' });
+    }
+    return arr;
+  }, [pickupCoords, dropoffCoords, ride?.status, mapTheme]);
 
-  const handleShare = () => {
-    setShareCopied(true);
-    setTimeout(() => setShareCopied(false), 2200);
+  const status = ride?.status;
+  const orderRef = (ride?.id || rideId || '').slice(-6).toUpperCase();
+  const collected = !!ride?.startedAt || status === 'en_route_dropoff' || status === 'completed';
+  const delivered = status === 'completed';
+  const railFillPct = `${RAIL_PCT[status ?? ''] ?? 0}%` as `${number}%`;
+  const gpsLive = lastFixAt != null && now - lastFixAt < 60000;
+  const remainingMins = etaAt != null ? Math.max(1, Math.ceil((etaAt - now) / 60000)) : null;
+  const etaKm = etaMeters != null ? (etaMeters / 1000).toFixed(1) : null;
+
+  const receiverName = ride?.packageDetails?.receiverName || 'Receiver';
+  const receiverPhone = ride?.packageDetails?.receiverPhone;
+  const receiverNotes = ride?.packageDetails?.notes;
+
+  const partnerName = ride?.partner?.name || 'Delivery partner';
+  const partnerMeta = [ride?.partner?.vehicleType, ride?.partner?.vehicleModel, ride?.partner?.vehicleNumber]
+    .filter(Boolean)
+    .join(' \u2022 ');
+
+  const transitSub = delivered
+    ? `Delivered to ${receiverName}${ride?.completedAt ? ` at ${fmtTime(ride.completedAt)}` : ''}`
+    : status === 'en_route_dropoff'
+      ? remainingMins != null
+        ? `${remainingMins} min left${etaKm ? ` \u2022 ${etaKm} km` : ''} to ${receiverName}`
+        : 'Moving towards dropoff'
+      : status === 'arrived'
+        ? `Waiting at ${ride?.pickup?.address || 'pickup'} for PIN handover`
+        : status === 'accepted' || status === 'en_route_pickup'
+          ? `Heading to ${ride?.pickup?.address || 'pickup'}`
+          : 'Waiting for a partner';
+
+  // Only claims what actually happened: the PIN is verified by the server
+  // before `startedAt` exists, and "live" is gated on a recent GPS fix.
+  const trustSub = delivered
+    ? `Delivered${ride?.completedAt ? ` at ${fmtTime(ride.completedAt)}` : ''}`
+    : collected
+      ? `Pickup PIN verified${ride?.startedAt ? ` at ${fmtTime(ride.startedAt)}` : ''} \u2022 ${gpsLive ? 'Live GPS tracking' : 'Awaiting live GPS from partner'
+      }`
+      : 'PIN verification at pickup \u2022 Live GPS tracking';
+
+  // LiveMap re-sends `setRoute` whenever this prop's identity changes, so it
+  // must not be rebuilt on every render.
+  const routeProp = useMemo(
+    () => (routeCoords.length > 0 ? { coordinates: routeCoords } : null),
+    [routeCoords]
+  );
+
+  const callPartner = () => {
+    const url = telLink(ride?.partner?.phone);
+    if (url) {
+      Linking.openURL(url).catch(() => { });
+      return;
+    }
+    Alert.alert('No number available', 'The delivery partner phone number is not available yet.');
   };
+
+  const handleShare = async () => {
+    if (!rideId) return;
+    // Deep link back into this screen: it opens the app where installed, which
+    // is as far as a share can reach without a hosted tracking page.
+    const url = Linking.createURL('/package-transit', { queryParams: { rideId } });
+    try {
+      const result = await Share.share({
+        message: `Track my Ematix delivery${orderRef ? ` (Order #${orderRef})` : ''}: ${url}`,
+        title: 'Ematix Live Tracking',
+      });
+      if (result.action === Share.sharedAction) {
+        setShareCopied(true);
+        setTimeout(() => setShareCopied(false), 2200);
+      }
+    } catch (e) {
+      console.warn('Share failed', e);
+    }
+  };
+
+  if (unavailable) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <SharedHeader currentScreen="package-transit" title="Product Delivery Live Tracking" />
+        <View style={styles.unavailableWrap}>
+          <MaterialIcon name="error-outline" size={48} color={colors.textMuted} />
+          <Text style={styles.unavailableTitle}>Delivery not available</Text>
+          <Text style={styles.unavailableText}>
+            This delivery is no longer available or you are not authorized to view it.
+          </Text>
+          <TouchableOpacity style={styles.unavailableBtn} onPress={() => router.replace('/(tabs)/home')}>
+            <Text style={styles.unavailableBtnText}>Back to Home</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
       <SharedHeader currentScreen="package-transit" title="Product Delivery Live Tracking" />
 
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+      <View style={{ flex: 1 }}>
         {/* Map Canvas */}
-        <View style={styles.mapContainer}>
-          <RealMap interactive style={styles.mapImage}>
-            <View style={styles.mapOverlay} pointerEvents="none" />
-
-            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 360" preserveAspectRatio="xMidYMid slice" pointerEvents="none">
-              <Path d="M 72 260 C 130 250, 150 170, 220 160 C 270 152, 290 95, 320 65" stroke="#0033b1" strokeLinecap="round" strokeLinejoin="round" strokeOpacity={0.18} strokeWidth={8} />
-              <Path d="M 72 260 C 130 250, 150 170, 220 160 C 270 152, 290 95, 320 65" stroke="#0033b1" strokeDasharray="6 4" strokeLinecap="round" strokeWidth={4} />
-            </Svg>
-
+        <View style={StyleSheet.absoluteFill}>
+          <LiveMap
+            ref={mapRef}
+            interactive
+            style={styles.mapImage}
+            vehicle={driver}
+            follow={follow}
+            route={routeProp}
+            pins={pins}
+            onUserMove={() => setFollow(false)}
+          >
             {/* Live Status Pill */}
             <View style={styles.livePill}>
               <View style={styles.liveDotWrap}>
@@ -164,7 +466,7 @@ export default function PackageTransitScreen() {
 
             {/* Map Controls */}
             <View style={styles.mapControls}>
-              <TouchableOpacity style={styles.controlBtn} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.controlBtn} activeOpacity={0.85} onPress={() => { setFollow(true); mapRef.current?.focusVehicle(); }}>
                 <MaterialIcon name="my-location" size={20} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.controlBtn} activeOpacity={0.85}>
@@ -172,47 +474,30 @@ export default function PackageTransitScreen() {
               </TouchableOpacity>
             </View>
 
-            {/* Pickup Waypoint */}
-            <View style={styles.waypointPickup}>
-              <View style={styles.waypointPill}>
-                <MaterialIcon name="check-circle" size={12} color={colors.primaryContainer} />
-                <Text style={styles.waypointPillText}>Greenways Rd</Text>
-              </View>
-              <View style={styles.waypointDot}>
-                <View style={styles.waypointDotCore}>
-                  <MaterialIcon name="inventory-2" size={10} color={colors.onPrimary} />
-                </View>
-              </View>
-            </View>
-
-            {/* Drop Waypoint */}
-            <View style={styles.waypointDrop}>
-              <View style={styles.waypointDropPill}>
-                <Text style={styles.waypointDropText}>Indiranagar</Text>
-              </View>
-              <View style={styles.waypointDropDot}>
-                <MaterialIcon name="location-on" size={16} color={colors.onPrimary} />
-              </View>
-            </View>
-
-            {/* Moving Marker */}
-            <BounceMarker />
-
             {/* ETA Pill */}
             <View style={styles.etaPill}>
               <View style={styles.etaIconWrap}>
                 <MaterialIcon name="schedule" size={24} color={colors.primary} />
               </View>
               <View style={styles.etaTextCol}>
-                <Text style={styles.etaLabel}>Estimated Arrival</Text>
-                <Text style={styles.etaTitle} numberOfLines={1}>Delivering by 06:15 PM</Text>
+                <Text style={styles.etaLabel}>
+                  {etaAt ? `Estimated Arrival \u2022 ~${fmtTime(etaAt)}` : 'Estimated Arrival'}
+                </Text>
+                <Text style={styles.etaTitle} numberOfLines={1}>
+                  {status === 'pending' || status === 'accepted' ? 'Connecting to partner'
+                    : status === 'en_route_pickup' ? 'Partner on the way to pickup'
+                      : status === 'arrived' ? 'Partner arrived at pickup'
+                        : status === 'completed' ? 'Delivered'
+                          : 'Delivering shortly'}
+                </Text>
               </View>
               <View style={styles.etaStats}>
-                <Text style={styles.etaStatStrong}>14 mins left</Text>
-                <Text style={styles.etaStatSub}>3.8 km</Text>
+                <Text style={styles.etaStatStrong}>
+                  {remainingMins != null ? `${remainingMins} min` : status === 'en_route_dropoff' ? 'In transit' : '\u2014'}
+                </Text>
               </View>
             </View>
-          </RealMap>
+          </LiveMap>
         </View>
 
         {/* Sliding Drawer Sheet */}
@@ -222,77 +507,119 @@ export default function PackageTransitScreen() {
             <View style={styles.trackingHeader}>
               <Text style={styles.trackingTitle}>Transit Tracking</Text>
               <View style={styles.orderPill}>
-                <Text style={styles.orderPillText}>Order #EM-89240</Text>
+                <Text style={styles.orderPillText}>Order #{orderRef || '\u2014'}</Text>
               </View>
             </View>
 
             <View style={styles.stepper}>
               <View style={styles.stepRail} />
-              <View style={styles.stepRailFill} />
+              <View style={[styles.stepRailFill, { height: railFillPct }]} />
 
               <View style={styles.stepRow}>
-                <View style={styles.stepDotDone}>
-                  <MaterialIcon name="check" size={14} color={colors.onPrimary} />
-                </View>
+                {collected ? (
+                  <View style={styles.stepDotDone}>
+                    <MaterialIcon name="check" size={14} color={colors.onPrimary} />
+                  </View>
+                ) : (
+                  <View style={styles.stepDotActive}>
+                    <PulseDot />
+                  </View>
+                )}
                 <View style={styles.stepTextCol}>
-                  <Text style={styles.stepTitle}>Package Picked Up</Text>
-                  <Text style={styles.stepSub}>Greenways Road Hub</Text>
+                  <Text style={collected ? styles.stepTitle : styles.stepTitlePending}>
+                    {collected ? 'Package Picked Up' : 'Awaiting Pickup'}
+                  </Text>
+                  <Text style={styles.stepSub} numberOfLines={1}>
+                    {ride?.pickup?.address || 'Pickup location'}
+                  </Text>
                 </View>
-                <Text style={styles.stepTime}>05:48 PM</Text>
+                <Text style={styles.stepTime}>{collected ? fmtTime(ride?.startedAt) : ''}</Text>
               </View>
 
               <View style={styles.stepRow}>
-                <View style={styles.stepDotActive}>
-                  <PulseDot />
-                </View>
+                {delivered ? (
+                  <View style={styles.stepDotDone}>
+                    <MaterialIcon name="check" size={14} color={colors.onPrimary} />
+                  </View>
+                ) : collected ? (
+                  <View style={styles.stepDotActive}>
+                    <PulseDot />
+                  </View>
+                ) : (
+                  <View style={styles.stepDotPending}>
+                    <MaterialIcon name="local-shipping" size={14} color={colors.outline} />
+                  </View>
+                )}
                 <View style={styles.stepTextCol}>
                   <View style={styles.stepActiveTitleRow}>
-                    <Text style={styles.stepActiveTitle}>On the Way</Text>
-                    <View style={styles.liveBadge}>
-                      <Text style={styles.liveBadgeText}>Live</Text>
-                    </View>
+                    <Text style={collected && !delivered ? styles.stepActiveTitle : styles.stepTitlePending}>
+                      On the Way
+                    </Text>
+                    {collected && !delivered && gpsLive ? (
+                      <View style={styles.liveBadge}>
+                        <Text style={styles.liveBadgeText}>Live</Text>
+                      </View>
+                    ) : null}
                   </View>
-                  <Text style={styles.stepSub}>Passing Adyar Bridge • Moving smoothly</Text>
+                  <Text style={styles.stepSub} numberOfLines={2}>{transitSub}</Text>
                 </View>
               </View>
 
               <View style={styles.stepRow}>
-                <View style={styles.stepDotPending}>
-                  <MaterialIcon name="pin-drop" size={14} color={colors.outline} />
+                <View style={delivered ? styles.stepDotDone : styles.stepDotPending}>
+                  <MaterialIcon
+                    name={delivered ? 'check' : 'pin-drop'}
+                    size={14}
+                    color={delivered ? colors.onPrimary : colors.outline}
+                  />
                 </View>
                 <View style={styles.stepTextCol}>
-                  <Text style={styles.stepTitlePending}>Arriving at Destination</Text>
-                  <Text style={styles.stepSub}>14/B, Palm Meadows, Indiranagar</Text>
+                  <Text style={delivered ? styles.stepTitle : styles.stepTitlePending}>
+                    {delivered ? 'Delivered' : 'Arriving at Destination'}
+                  </Text>
+                  <Text style={styles.stepSub} numberOfLines={1}>
+                    {ride?.dropoff?.address || 'Dropoff location'}
+                  </Text>
                 </View>
-                <Text style={styles.stepTimePending}>~ 06:15 PM</Text>
+                <Text style={styles.stepTimePending}>
+                  {delivered ? fmtTime(ride?.completedAt) : etaAt ? `~ ${fmtTime(etaAt)}` : ''}
+                </Text>
               </View>
             </View>
           </View>
 
-          {/* Receiver Notification Card */}
+          {/* Receiver Contact & OTP Card */}
           <View style={styles.receiverCard}>
             <View style={styles.receiverIconWrap}>
-              <MaterialIcon name="mark-email-read" size={24} color={colors.primary} />
+              <MaterialIcon name="call" size={24} color={colors.primary} />
             </View>
             <View style={styles.receiverInfo}>
               <View style={styles.receiverNameRow}>
-                <Text style={styles.receiverName} numberOfLines={1}>Priya Sharma</Text>
+                <Text style={styles.receiverName} numberOfLines={1}>{receiverName}</Text>
                 <Text style={styles.receiverTag}>(Receiver)</Text>
               </View>
               <View style={styles.receiverNotifRow}>
-                <View style={styles.greenDot} />
-                <Text style={styles.receiverNotifText} numberOfLines={1}>
-                  Notified via WhatsApp &amp; Live Tracking Link
+                <Text style={styles.receiverNotifText} numberOfLines={2}>
+                  {receiverPhone ? `Contact: ${receiverPhone}` : 'No receiver contact provided'}
+                  {receiverNotes ? ` \u2022 ${receiverNotes}` : ''}
                 </Text>
               </View>
             </View>
+            {ride?.receiverOtp ? (
+              <View style={styles.otpPill}>
+                <Text style={styles.otpPillLabel}>PIN</Text>
+                <Text style={styles.otpPillValue}>{ride.receiverOtp}</Text>
+              </View>
+            ) : null}
           </View>
 
           {/* Partner Profile + Contact */}
           <View style={styles.partnerCard}>
             <View style={styles.partnerLeft}>
               <View style={styles.partnerAvatarWrap}>
-                <Image source={{ uri: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop&crop=faces&q=80' }} style={styles.partnerAvatar} />
+                <View style={styles.partnerAvatar}>
+                  <Text style={styles.partnerAvatarText}>{initialsOf(ride?.partner?.name)}</Text>
+                </View>
                 <View style={styles.partnerStarBadge}>
                   <MaterialIcon name="star" size={12} color={colors.onPrimary} />
                 </View>
@@ -300,13 +627,15 @@ export default function PackageTransitScreen() {
               <View style={styles.partnerInfo}>
                 <View style={styles.partnerNameRow}>
                   <Text style={styles.partnerName} numberOfLines={1}>{partnerName}</Text>
-                  <Text style={styles.partnerRating}>★ 4.9</Text>
+                  {ride?.partner?.rating != null ? (
+                    <Text style={styles.partnerRating}>{`\u2605 ${Number(ride.partner.rating).toFixed(1)}`}</Text>
+                  ) : null}
                 </View>
-                <Text style={styles.partnerMeta}>{partnerMeta}</Text>
+                {partnerMeta ? <Text style={styles.partnerMeta}>{partnerMeta}</Text> : null}
               </View>
             </View>
             <View style={styles.partnerActions}>
-              <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85}>
+              <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85} onPress={callPartner}>
                 <MaterialIcon name="call" size={20} color={colors.primary} />
               </TouchableOpacity>
               <TouchableOpacity style={styles.contactBtn} activeOpacity={0.85} onPress={() => { if (rideId) router.push(`/chat?rideId=${rideId}`); }}>
@@ -327,7 +656,7 @@ export default function PackageTransitScreen() {
                   <Text style={styles.encryptedPillText}>ENCRYPTED</Text>
                 </View>
               </View>
-              <Text style={styles.trustSub}>Live GPS tracking &amp; Tamper-proof OTP verification enabled</Text>
+              <Text style={styles.trustSub}>{trustSub}</Text>
             </View>
           </View>
 
@@ -340,7 +669,7 @@ export default function PackageTransitScreen() {
                 <MaterialIcon name="share" size={20} color={colors.onPrimary} />
               )}
               <Text style={styles.shareBtnText}>
-                {shareCopied ? 'Tracking Link Copied!' : 'Share Live Tracking Link'}
+                {shareCopied ? 'Tracking Link Shared!' : 'Share Live Tracking Link'}
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -353,12 +682,12 @@ export default function PackageTransitScreen() {
             </TouchableOpacity>
           </View>
         </DraggableSheet>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,
@@ -381,7 +710,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 33, 124, 0.12)',
+    backgroundColor: mapTheme.brandTint,
   },
   livePill: {
     position: 'absolute',
@@ -390,7 +719,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: mapTheme.glass,
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 999,
@@ -436,7 +765,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: mapTheme.glass,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#000',
@@ -455,7 +784,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: mapTheme.glass,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -498,7 +827,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
   },
   waypointDropPill: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: mapTheme.glass,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 6,
@@ -597,7 +926,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(255, 255, 255, 0.96)',
+    backgroundColor: mapTheme.glassStrong,
     padding: 14,
     borderRadius: 16,
     shadowColor: '#000',
@@ -864,6 +1193,26 @@ const createStyles = (colors: any) => StyleSheet.create({
     color: colors.textMuted,
     flex: 1,
   },
+  otpPill: {
+    backgroundColor: colors.surfaceContainer,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.borderGray,
+  },
+  otpPillLabel: {
+    ...type.labelSm,
+    color: colors.textMuted,
+    marginBottom: 2,
+  },
+  otpPillValue: {
+    ...type.headlineSm,
+    color: colors.primary,
+    letterSpacing: 2,
+  },
   partnerCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -887,7 +1236,13 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerAvatarText: {
+    ...type.labelLg,
+    color: colors.onPrimary,
   },
   partnerStarBadge: {
     position: 'absolute',
@@ -946,7 +1301,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(234, 241, 255, 0.7)',
+    backgroundColor: mapTheme.tintPanel,
     padding: 14,
     borderRadius: 16,
   },
@@ -1023,5 +1378,39 @@ const createStyles = (colors: any) => StyleSheet.create({
   supportBtnText: {
     ...type.labelMd,
     color: colors.onSurfaceVariant,
+  },
+  unavailableWrap: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 32,
+    gap: 12,
+  },
+  unavailableTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 18,
+    lineHeight: 24,
+    color: colors.onSurface,
+    textAlign: 'center',
+  },
+  unavailableText: {
+    fontFamily: fonts.regular,
+    fontSize: 14,
+    lineHeight: 20,
+    color: colors.textMuted,
+    textAlign: 'center',
+  },
+  unavailableBtn: {
+    backgroundColor: colors.primary,
+    paddingVertical: 14,
+    paddingHorizontal: 28,
+    borderRadius: 14,
+    marginTop: 8,
+  },
+  unavailableBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+    lineHeight: 20,
+    color: colors.onPrimary,
   },
 });

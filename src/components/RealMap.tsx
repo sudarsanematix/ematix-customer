@@ -1,4 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useRef } from 'react';
+import { useTheme } from '../theme/ThemeProvider';
+import { buildMapTheme } from '../theme/mapTheme';
 import { StyleSheet, View, StyleProp, ViewStyle, Platform } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -25,6 +27,8 @@ export const CHENNAI_REGION: MapRegion = {
 
 const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
 
+export type MapPadding = { top?: number; bottom?: number; left?: number; right?: number } | number;
+
 interface RealMapProps {
   style?: StyleProp<ViewStyle>;
   region?: MapRegion;
@@ -32,18 +36,94 @@ interface RealMapProps {
   markers?: MapMarker[];
   routeCoordinates?: [number, number][]; // [longitude, latitude][]
   showUserLocation?: boolean; // NEW PROP
+  pulseMarker?: { latitude: number, longitude: number }; // NEW PROP for finding driver
+  mapPadding?: MapPadding; // NEW PROP to shift map center
   children?: React.ReactNode;
+  onRegionChange?: (region: { latitude: number, longitude: number }) => void;
 }
 
-export default function RealMap({ style, region = CHENNAI_REGION, interactive = false, markers = [], routeCoordinates = [], showUserLocation = false, children }: RealMapProps) {
-  
+export default function RealMap({ 
+  style, 
+  region = CHENNAI_REGION, 
+  interactive = false, 
+  markers = [], 
+  routeCoordinates = [], 
+  showUserLocation = false, 
+  pulseMarker, 
+  mapPadding, 
+  children, 
+  onRegionChange 
+}: RealMapProps) {
+  const { isDark } = useTheme();
+  const theme = useMemo(() => buildMapTheme(isDark), [isDark]);
+  const webViewRef = useRef<any>(null);
+  const bootRegionRef = useRef(region);
+  const regionKey = JSON.stringify(region);
+  const markersKey = JSON.stringify(markers);
+
+  const isWebViewReady = useRef(false);
+  const pendingInjections = useRef<string[]>([]);
+
+  const safeInject = (js: string) => {
+    if (isWebViewReady.current && webViewRef.current) {
+      webViewRef.current.injectJavaScript(js);
+    } else {
+      pendingInjections.current.push(js);
+    }
+  };
+
+  const markersJs = useMemo(() => {
+    return markers.map(marker => {
+      if (marker.id === 'me') {
+        return `
+          var el = document.createElement('div');
+          el.className = 'customer-marker-wrapper';
+          el.innerHTML = \`
+            <div class="customer-beacon">
+              <div class="customer-beacon-label">You are here</div>
+              <div class="customer-beacon-stem"></div>
+              <div class="customer-beacon-base">
+                <div class="customer-beacon-halo"></div>
+                <div class="customer-beacon-base-inner"></div>
+              </div>
+            </div>
+            <div class="customer-beacon-shadow"></div>
+          \`;
+          new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+            .setLngLat([${marker.longitude}, ${marker.latitude}])
+            .addTo(map);
+        `;
+      } else {
+        return `
+          new mapboxgl.Marker({ color: '${marker.color || '#000000'}' })
+            .setLngLat([${marker.longitude}, ${marker.latitude}])
+            .addTo(map);
+        `;
+      }
+    }).join('\n');
+  }, [markersKey]);
+
+  React.useEffect(() => {
+    safeInject(`
+      if (window.updateMarkers) {
+         window.updateMarkers(\`${markersJs.replace(/`/g, '\\`')}\`);
+      }
+      true;
+    `);
+  }, [markersJs]);
+
+  React.useEffect(() => {
+    const zoom = Math.round(Math.log(360 / region.longitudeDelta) / Math.LN2) || 12;
+    safeInject(`
+      if (window.flyToRegion) {
+         window.flyToRegion(${region.longitude}, ${region.latitude}, ${zoom});
+      }
+      true;
+    `);
+  }, [regionKey]);
+
   const htmlContent = useMemo(() => {
-    // Generate Markers JS
-    const markersJs = markers.map(marker => `
-      new mapboxgl.Marker({ color: '${marker.color || '#000000'}' })
-        .setLngLat([${marker.longitude}, ${marker.latitude}])
-        .addTo(map);
-    `).join('\n');
+    const styleUrl = theme.styleUrl;
 
     // Generate Route JS
     let routeJs = '';
@@ -70,15 +150,35 @@ export default function RealMap({ style, region = CHENNAI_REGION, interactive = 
               'line-cap': 'round'
             },
             'paint': {
-              'line-color': '#00217C',
+              'line-color': '${theme.routeDone}',
               'line-width': 4
             }
           });
+
+          // Automatically fit the map to the route bounds
+          const coordinates = ${JSON.stringify(routeCoordinates)};
+          const bounds = coordinates.reduce(function(bounds, coord) {
+            return bounds.extend(coord);
+          }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+          
+          map.fitBounds(bounds, { padding: ${mapPadding ? JSON.stringify(mapPadding) : 50}, duration: 800 });
         });
       `;
     }
 
     const geolocateJs = '';
+
+    // Pulse Marker JS
+    let pulseJs = '';
+    if (pulseMarker) {
+      pulseJs = `
+        const el = document.createElement('div');
+        el.className = 'pulse-marker';
+        new mapboxgl.Marker({ element: el })
+          .setLngLat([${pulseMarker.longitude}, ${pulseMarker.latitude}])
+          .addTo(map);
+      `;
+    }
 
     // Determine Mapbox Zoom based on latitudeDelta
     // Approximate zoom level calculation
@@ -93,8 +193,138 @@ export default function RealMap({ style, region = CHENNAI_REGION, interactive = 
       <link href="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.css" rel="stylesheet">
       <script src="https://api.mapbox.com/mapbox-gl-js/v3.1.2/mapbox-gl.js"></script>
       <style>
-      body { margin: 0; padding: 0; }
-      #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+      :root {
+        --ematix-base: ${theme.base};
+        --ematix-on-base: ${theme.onBase};
+        --ematix-shadow: ${theme.shadow};
+      }
+      html, body { margin: 0; padding: 0; background: var(--ematix-base); touch-action: none; overflow: hidden; }
+      #map { position: absolute; top: 0; bottom: 0; width: 100%; touch-action: none; }
+      .mapboxgl-ctrl-attrib { font-size: 9px; opacity: 0.85; color: ${theme.attributionFg}; }
+      .mapboxgl-ctrl-attrib a { color: ${theme.attributionFg}; }
+      
+      .customer-marker-wrapper {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        width: 100px;
+      }
+      .customer-beacon {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        animation: levitate 2.5s ease-in-out infinite;
+        z-index: 2;
+      }
+      .customer-beacon-label {
+        background-color: #ff6b00; /* Ematix Orange */
+        color: white;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        font-weight: 600;
+        font-size: 11px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        box-shadow: 0 3px 6px rgba(0,0,0,0.25);
+        margin-bottom: -1px; /* Overlap stem slightly */
+      }
+      .customer-beacon-stem {
+        width: 2px;
+        height: 18px;
+        background-color: #ff6b00;
+      }
+      .customer-beacon-base {
+        width: 14px;
+        height: 14px;
+        background-color: #ff6b00;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+      }
+      .customer-beacon-base-inner {
+        width: 5px;
+        height: 5px;
+        background-color: white;
+        border-radius: 50%;
+      }
+      .customer-beacon-halo {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 32px;
+        height: 32px;
+        background-color: rgba(255, 107, 0, 0.25);
+        border-radius: 50%;
+        transform: translate(-50%, -50%);
+        z-index: -1;
+      }
+      .customer-beacon-shadow {
+        position: absolute;
+        bottom: 2px;
+        left: 50%;
+        width: 30px;
+        height: 8px;
+        background: linear-gradient(to right, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%);
+        transform-origin: left center;
+        transform: skewX(-50deg);
+        border-radius: 50%;
+        z-index: -2;
+        animation: shadow-pulse 2.5s ease-in-out infinite;
+      }
+      @keyframes levitate {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-6px); }
+      }
+      @keyframes shadow-pulse {
+        0%, 100% { transform: skewX(-50deg) scaleX(1); opacity: 0.8; }
+        50% { transform: skewX(-50deg) scaleX(0.7); opacity: 0.4; }
+      }
+
+      .pulse-marker {
+        width: 32px;
+        height: 32px;
+        background-color: ${theme.routeDone};
+        border-radius: 50%;
+        position: relative;
+      }
+      .pulse-marker::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 12px;
+        height: 12px;
+        background-color: var(--ematix-on-base);
+        border-radius: 50%;
+      }
+      .pulse-marker::before {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 100%;
+        height: 100%;
+        background-color: ${theme.brandTint};
+        border-radius: 50%;
+        animation: pulse-ring 2s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        z-index: -1;
+      }
+      @keyframes pulse-ring {
+        0% {
+          width: 32px;
+          height: 32px;
+          opacity: 1;
+        }
+        100% {
+          width: 250px;
+          height: 250px;
+          opacity: 0;
+        }
+      }
       </style>
       </head>
       <body>
@@ -103,30 +333,88 @@ export default function RealMap({ style, region = CHENNAI_REGION, interactive = 
       mapboxgl.accessToken = '${MAPBOX_TOKEN}';
       const map = new mapboxgl.Map({
           container: 'map',
-          style: 'mapbox://styles/mapbox/navigation-day-v1', // Clean navigation style
-          center: [${region.longitude}, ${region.latitude}],
+          style: '${styleUrl}',
+          center: [${bootRegionRef.current.longitude}, ${bootRegionRef.current.latitude}],
           zoom: ${zoom},
           interactive: ${interactive}
+      });
+      
+      let targetCenter = null;
+      let targetZoom = null;
+      window.flyToRegion = function(lng, lat, zoom) {
+        if (typeof map !== 'undefined' && map.isStyleLoaded()) {
+           map.flyTo({ center: [lng, lat], zoom: zoom, speed: 1.2 });
+        } else {
+           targetCenter = [lng, lat];
+           targetZoom = zoom;
+        }
+      };
+
+      window.updateMarkers = function(script) {
+        if (typeof map !== 'undefined' && map.isStyleLoaded()) {
+          // In a real app we'd track and remove old markers.
+          // For now, eval handles the simple rendering
+          try { eval(script); } catch(e) {}
+        } else {
+          // If not loaded, they are already in the boot HTML, so no-op
+        }
+      };
+
+      map.on('load', () => {
+         if (targetCenter) {
+            map.flyTo({ center: targetCenter, zoom: targetZoom, speed: 1.2 });
+            targetCenter = null;
+         }
+      });
+
+      map.on('moveend', () => {
+        if (window.ReactNativeWebView) {
+          const center = map.getCenter();
+          window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'regionChange', latitude: center.lat, longitude: center.lng }));
+        }
       });
       ${markersJs}
       ${routeJs}
       ${geolocateJs}
+      ${pulseJs}
       </script>
       </body>
       </html>
     `;
-  }, [region, interactive, markers, routeCoordinates, showUserLocation]);
+    // RealMap has no command bridge, so the theme is baked in and the WebView
+    // re-keys on toggle. That is fine here: it is a static preview map, never a
+    // live ride whose camera or follow mode would be lost.
+  }, [interactive, routeCoordinates, showUserLocation, pulseMarker, theme]);
 
   return (
-    <View style={[styles.container, style]}>
+    <View style={[styles.container, { backgroundColor: theme.base }, style]}>
       <WebView 
+        ref={webViewRef}
+        key={isDark ? 'dark' : 'light'}
         source={{ html: htmlContent, baseUrl: 'https://localhost/' }} 
         style={StyleSheet.absoluteFill}
         showsHorizontalScrollIndicator={false}
         showsVerticalScrollIndicator={false}
         pointerEvents={interactive ? 'auto' : 'none'}
         bounces={false}
+        scrollEnabled={false}
+        overScrollMode="never"
         geolocationEnabled={true}
+        onLoadEnd={() => {
+          isWebViewReady.current = true;
+          if (webViewRef.current && pendingInjections.current.length > 0) {
+            pendingInjections.current.forEach(js => webViewRef.current?.injectJavaScript(js));
+            pendingInjections.current = [];
+          }
+        }}
+        onMessage={(event) => {
+          try {
+            const data = JSON.parse(event.nativeEvent.data);
+            if (data.type === 'regionChange' && onRegionChange) {
+              onRegionChange({ latitude: data.latitude, longitude: data.longitude });
+            }
+          } catch (e) {}
+        }}
       />
       {children ? (
         <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
@@ -143,6 +431,5 @@ const styles = StyleSheet.create({
     height: '100%',
     overflow: 'hidden',
     position: 'relative',
-    backgroundColor: '#e8ecef',
   }
 });

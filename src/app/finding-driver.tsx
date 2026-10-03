@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -8,6 +8,7 @@ import {
   ScrollView,
   Modal,
   Animated,
+  BackHandler,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -15,6 +16,7 @@ import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import RealMap from '../components/RealMap';
 import { useTheme } from '../theme/ThemeProvider';
+import { buildMapTheme, type MapThemeTokens } from '../theme/mapTheme';
 import { radius, fonts } from '../theme/typography';
 import { socketService } from '../utils/socket';
 import { useAuth } from '../context/AuthContext';
@@ -80,8 +82,8 @@ interface MapIconPingProps {
 }
 
 function MapIconPing({ top, left, right, kind }: MapIconPingProps) {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, buildMapTheme(isDark));
   const positionStyles: Record<string, string> = { top };
   if (left) positionStyles.left = left;
   if (right) positionStyles.right = right;
@@ -99,15 +101,33 @@ function MapIconPing({ top, left, right, kind }: MapIconPingProps) {
 }
 
 export default function FindingDriverScreen() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
+  const styles = createStyles(colors, mapTheme);
   const router = useRouter();
   const { user } = useAuth();
-  const { rideId, vehicle, pickup, dropoff } = useLocalSearchParams<{ rideId?: string, vehicle?: string, pickup?: string, dropoff?: string }>();
+  const { rideId, vehicle, pickup, dropoff, pLat, pLng, price } = useLocalSearchParams<{ rideId?: string, vehicle?: string, pickup?: string, dropoff?: string, pLat?: string, pLng?: string, price?: string }>();
   const isCar = vehicle === 'car';
+
+  const pLatNum = pLat ? parseFloat(pLat) : null;
+  const pLngNum = pLng ? parseFloat(pLng) : null;
+
+  const displayPrice = price ? (String(price).startsWith('₹') ? price : `₹${price}`) : '';
+
   const [timer, setTimer] = useState(24);
   const [showCancelModal, setShowCancelModal] = useState(false);
+  const [showTipModal, setShowTipModal] = useState(false);
+  const [showTimeoutModal, setShowTimeoutModal] = useState(false);
+  const [tipAdded, setTipAdded] = useState(false);
   const modalRef = useRef(false);
+
+  useEffect(() => {
+    if (timer === 120 && !tipAdded) {
+      setShowTipModal(true);
+    } else if (timer === 240) {
+      setShowTimeoutModal(true);
+    }
+  }, [timer, tipAdded]);
 
   useEffect(() => {
     modalRef.current = showCancelModal;
@@ -143,17 +163,31 @@ export default function FindingDriverScreen() {
     return `${m}:${s < 10 ? '0' : ''}${s}`;
   };
 
+  useEffect(() => {
+    const onBackPress = () => {
+      setShowCancelModal(true);
+      return true; // prevent default back
+    };
+    const subscription = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => subscription.remove();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SharedHeader currentScreen="finding-driver" title="Finding Driver" />
+      <SharedHeader currentScreen="finding-driver" title="Finding Driver" onBackPress={() => setShowCancelModal(true)} />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content} bounces={false}>
         {/* Map Simulation Layer */}
         <View style={styles.mapContainer}>
-          <RealMap interactive style={styles.mapImage}>
+          <RealMap
+            interactive={true}
+            style={styles.mapImage}
+            region={pLatNum && pLngNum ? { latitude: pLatNum, longitude: pLngNum, latitudeDelta: 0.01, longitudeDelta: 0.01 } : undefined}
+            pulseMarker={pLatNum && pLngNum ? { latitude: pLatNum, longitude: pLngNum } : undefined}
+          >
             {/* Vignette Gradient */}
             <LinearGradient
-              colors={['rgba(252,249,248,0.7)', 'transparent', colors.surface]}
+              colors={[mapTheme.scrimFrom, 'transparent', mapTheme.scrimTo]}
               style={StyleSheet.absoluteFill}
               pointerEvents="none"
             />
@@ -168,24 +202,6 @@ export default function FindingDriverScreen() {
                 <Text style={styles.beaconText}>Connecting to nearby drivers</Text>
               </View>
             </View>
-
-            {/* Radar Waves & User Beacon Node */}
-            <View style={styles.radarCenter} pointerEvents="none">
-              <PingRing size={256} duration={3000} delay={0} color="rgba(0,33,124,0.1)" />
-              <PingRing size={176} duration={2000} delay={600} color="rgba(0,33,124,0.15)" />
-              <View style={styles.radarGlow}>
-                <View style={styles.radarCore}>
-                  <View style={styles.radarPulse}>
-                    <View style={styles.radarDot} />
-                  </View>
-                </View>
-              </View>
-            </View>
-
-            {/* Simulated Nearby Driver Pings */}
-            <MapIconPing top="38%" left="28%" kind="taxi" />
-            <MapIconPing top="62%" right="24%" kind="taxi" />
-            <MapIconPing top="28%" right="32%" kind="rickshaw" />
 
             {/* Recenter Button */}
             <TouchableOpacity style={styles.recenterBtn} activeOpacity={0.7} accessibilityLabel="Recenter map" accessibilityRole="button" hitSlop={8}>
@@ -243,7 +259,7 @@ export default function FindingDriverScreen() {
                 </View>
               </View>
               <View style={styles.priceInfo}>
-                <Text style={styles.priceText}>₹135</Text>
+                <Text style={styles.priceText}>{displayPrice}</Text>
                 <Text style={styles.guaranteeText}>Guaranteed</Text>
               </View>
             </View>
@@ -292,7 +308,7 @@ export default function FindingDriverScreen() {
               <Text style={styles.modalTitle}>Cancel Search?</Text>
               <Text style={styles.modalSubtitle}>
                 We are almost done matching with a driver nearby. Cancelling will forfeit your guaranteed
-                upfront fare of ₹135.
+                upfront fare of {displayPrice}.
               </Text>
             </View>
             <View style={styles.modalActions}>
@@ -308,6 +324,9 @@ export default function FindingDriverScreen() {
                 activeOpacity={0.9}
                 onPress={() => {
                   setShowCancelModal(false);
+                  if (rideId) {
+                    socketService.emit('cancel_ride', { rideId });
+                  }
                   if (router.canGoBack()) {
                     router.back();
                   } else {
@@ -321,11 +340,87 @@ export default function FindingDriverScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Tip Modal */}
+      <Modal visible={showTipModal} transparent animationType="fade" onRequestClose={() => setShowTipModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={[styles.alertIconWrapper, { backgroundColor: mapTheme.successTint }]}>
+                <MaterialIcon name="payments" size={26} color="#00B853" />
+              </View>
+              <Text style={styles.modalTitle}>Find a Driver Faster</Text>
+              <Text style={styles.modalSubtitle}>
+                Drivers are currently busy. Adding a tip could encourage a nearby partner to accept your ride.
+              </Text>
+            </View>
+            <View style={{ flexDirection: 'row', gap: 12, justifyContent: 'center', marginBottom: 24 }}>
+              {[10, 20, 50].map((amt) => (
+                <TouchableOpacity key={amt} style={{ paddingVertical: 12, paddingHorizontal: 20, borderRadius: 12, borderWidth: 1, borderColor: colors.outlineVariant }} onPress={() => { setTipAdded(true); setShowTipModal(false); }}>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.onSurface }}>+₹{amt}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.keepSearchBtn}
+                activeOpacity={0.9}
+                onPress={() => setShowTipModal(false)}
+              >
+                <Text style={styles.keepSearchBtnText}>No Thanks</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Timeout Modal */}
+      <Modal visible={showTimeoutModal} transparent animationType="fade" onRequestClose={() => setShowTimeoutModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.modalHeader}>
+              <View style={styles.alertIconWrapper}>
+                <MaterialIcon name="timer" size={26} color={colors.accentRed} />
+              </View>
+              <Text style={styles.modalTitle}>Still Searching...</Text>
+              <Text style={styles.modalSubtitle}>
+                We are having trouble finding a driver. Do you want to keep waiting or cancel the ride?
+              </Text>
+            </View>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.keepSearchBtn}
+                activeOpacity={0.9}
+                onPress={() => setShowTimeoutModal(false)}
+              >
+                <Text style={styles.keepSearchBtnText}>Keep Waiting</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                activeOpacity={0.9}
+                onPress={() => {
+                  setShowTimeoutModal(false);
+                  if (rideId) {
+                    socketService.emit('cancel_ride', { rideId });
+                  }
+                  if (router.canGoBack()) {
+                    router.back();
+                  } else {
+                    router.replace('/(tabs)/home');
+                  }
+                }}
+              >
+                <Text style={styles.confirmCancelBtnText}>Cancel Ride</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,
@@ -354,7 +449,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   beaconPill: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(252, 249, 248, 0.9)',
+    backgroundColor: mapTheme.glass,
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 999,
@@ -410,7 +505,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 112,
     height: 112,
     borderRadius: 56,
-    backgroundColor: 'rgba(0, 33, 124, 0.2)',
+    backgroundColor: mapTheme.brandTint,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -418,7 +513,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 64,
     height: 64,
     borderRadius: 32,
-    backgroundColor: 'rgba(0, 51, 177, 0.2)',
+    backgroundColor: mapTheme.brandTintSoft,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -463,7 +558,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(252, 249, 248, 0.9)',
+    backgroundColor: mapTheme.glass,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -474,7 +569,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     zIndex: 20,
   },
   bottomSheet: {
-    backgroundColor: 'rgba(252, 249, 248, 0.95)',
+    backgroundColor: mapTheme.glassStrong,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
     paddingHorizontal: 20,
@@ -533,7 +628,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   progressContainer: {
     flexDirection: 'column',
     gap: 8,
-    backgroundColor: 'rgba(234, 241, 255, 0.7)',
+    backgroundColor: mapTheme.tintPanel,
     padding: 12,
     borderRadius: radius.lg,
   },
@@ -569,7 +664,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   trackBar: {
     height: 6,
-    backgroundColor: 'rgba(180, 197, 255, 0.4)',
+    backgroundColor: mapTheme.tintPanelTrack,
     borderRadius: 3,
     overflow: 'hidden',
   },

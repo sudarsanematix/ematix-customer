@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import Svg, { Defs, LinearGradient as SvgGradient, Stop, Path } from 'react-nati
 import { LinearGradient } from 'expo-linear-gradient';
 import SharedHeader from '../components/SharedHeader';
 import { useTheme } from '../theme/ThemeProvider';
+import { buildMapTheme, type MapThemeTokens } from '../theme/mapTheme';
 import { type, spacing, radius, fonts } from '../theme/typography';
 import MaterialIcon from '../components/MaterialIcon';
 import RealMap from '../components/RealMap';
@@ -100,19 +101,74 @@ function BouncePin({ children }: { children: React.ReactNode }) {
 }
 
 export default function SelectRideScreen() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
+  const styles = createStyles(colors, mapTheme);
   const router = useRouter();
   const { user } = useAuth();
-  const { vehicle, pickup: routePickup, destination: routeDestination } = useLocalSearchParams();
+  const { 
+    vehicle, 
+    pickup: routePickup, 
+    destination: routeDestination,
+    pickupLat,
+    pickupLng,
+    dropoffLat,
+    dropoffLng,
+    distance,
+    duration
+  } = useLocalSearchParams();
   const pendingRideRef = useRef<((data: any) => void) | null>(null);
 
   const pickup = typeof routePickup === 'string' ? routePickup : '';
   const dropoff = typeof routeDestination === 'string' ? routeDestination : '';
 
+  const pLat = pickupLat ? parseFloat(pickupLat as string) : 13.0450;
+  const pLng = pickupLng ? parseFloat(pickupLng as string) : 80.2310;
+  const dLat = dropoffLat ? parseFloat(dropoffLat as string) : 13.0150;
+  const dLng = dropoffLng ? parseFloat(dropoffLng as string) : 80.2450;
+
+  const [routeCoords, setRouteCoords] = useState<[number, number][]>([[pLng, pLat], [dLng, dLat]]);
+
+  const parsedDistance = distance ? parseFloat(distance as string) : null;
+  const parsedDuration = duration ? parseFloat(duration as string) : null;
+  const distKm = parsedDistance ? (parsedDistance / 1000).toFixed(1) + 'km' : '20km';
+  const timeMins = parsedDuration ? Math.ceil(parsedDuration / 60) + 'mins' : '45mins';
+
+  // Base calculation for dynamic prices
+  // Car: 40 base + 12/km, Auto: 20 base + 8/km
+  const carPrice = parsedDistance ? Math.round(40 + (parsedDistance / 1000) * 12) : 65;
+  const autoPrice = parsedDistance ? Math.round(20 + (parsedDistance / 1000) * 8) : 35;
+
+  const dynamicRideOptions = RIDE_OPTIONS.map(ride => {
+    if (ride.id === 'car') {
+      return { ...ride, distance: distKm, time: timeMins, price: '₹' + carPrice };
+    } else if (ride.id === 'auto') {
+      return { ...ride, distance: distKm, time: timeMins, price: '₹' + autoPrice };
+    }
+    return ride;
+  });
+
   // Find the selected vehicle, default to car if not provided
   const selectedVehicleType = vehicle || 'car';
-  const selectedRide = RIDE_OPTIONS.find((r) => r.id === selectedVehicleType) || RIDE_OPTIONS[0];
+  const selectedRide = dynamicRideOptions.find((r) => r.id === selectedVehicleType) || dynamicRideOptions[0];
+
+  useEffect(() => {
+    // Fetch Mapbox Directions route
+    const fetchRoute = async () => {
+      try {
+        const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${pLng},${pLat};${dLng},${dLat}?geometries=geojson&access_token=${token}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.routes && data.routes.length > 0) {
+          setRouteCoords(data.routes[0].geometry.coordinates);
+        }
+      } catch (err) {
+        console.warn('Error fetching route:', err);
+      }
+    };
+    fetchRoute();
+  }, [pLat, pLng, dLat, dLng]);
 
   useEffect(() => {
     socketService.connect();
@@ -132,15 +188,15 @@ export default function SelectRideScreen() {
       customerId: user?.id,
       vehicle: selectedRide.name,
       price: selectedRide.price,
-      pickup: pickup,
-      dropoff: dropoff,
+      pickup: { address: pickup, lat: pLat, lng: pLng },
+      dropoff: { address: dropoff, lat: dLat, lng: dLng },
       eta: selectedRide.time,
     });
 
-    const fallback = setTimeout(() => router.push({ pathname: '/finding-driver', params: { vehicle: selectedVehicleType, pickup, dropoff } }), 8000);
+    const fallback = setTimeout(() => router.push({ pathname: '/finding-driver', params: { vehicle: selectedVehicleType, pickup, dropoff, pLat, pLng, price: selectedRide.price } }), 8000);
     pendingRideRef.current = (data: any) => {
       clearTimeout(fallback);
-      router.push({ pathname: '/finding-driver', params: { rideId: data?.id ? String(data.id) : '', vehicle: selectedVehicleType, pickup, dropoff } });
+      router.push({ pathname: '/finding-driver', params: { rideId: data?.id ? String(data.id) : '', vehicle: selectedVehicleType, pickup, dropoff, pLat, pLng, price: selectedRide.price } });
     };
   };
 
@@ -155,19 +211,14 @@ export default function SelectRideScreen() {
           style={styles.mapImage}
           showUserLocation={true}
           markers={[
-            { id: 'pickup', latitude: 13.0450, longitude: 80.2310, color: '#00217C' },
-            { id: 'dropoff', latitude: 13.0150, longitude: 80.2450, color: '#C52A2E' }
+            { id: 'pickup', latitude: pLat, longitude: pLng, color: mapTheme.routeDone },
+            { id: 'dropoff', latitude: dLat, longitude: dLng, color: mapTheme.success }
           ]}
-          routeCoordinates={[
-            [80.2310, 13.0450],
-            [80.2330, 13.0400],
-            [80.2380, 13.0300],
-            [80.2420, 13.0200],
-            [80.2450, 13.0150]
-          ]}
+          routeCoordinates={routeCoords}
+          mapPadding={{ top: 80, bottom: 420, left: 40, right: 40 }}
         >
           <LinearGradient
-            colors={['rgba(0,33,124,0.1)', 'transparent', 'rgba(252,249,248,0.8)']}
+            colors={[mapTheme.brandTint, 'transparent', mapTheme.scrimToSoft]}
             start={{ x: 0, y: 0 }}
             end={{ x: 0, y: 1 }}
             style={styles.mapScrim}
@@ -251,7 +302,7 @@ export default function SelectRideScreen() {
   );
 }
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.surface },
   mapContainer: { flex: 1, backgroundColor: colors.surfaceContainer },
   mapImage: { width: '100%', height: '100%' },
@@ -274,7 +325,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   nodeLabel: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: 'rgba(255,255,255,0.95)',
+    backgroundColor: mapTheme.glass,
     paddingLeft: 12,
     paddingRight: 6,
     paddingVertical: 6,
@@ -286,7 +337,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#000',
+    backgroundColor: mapTheme.onBase,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -308,12 +359,16 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderRadius: 20,
     gap: 8,
   },
-  nodeLabelTextDark: { ...type.labelSm, fontFamily: 'Inter_600SemiBold', color: '#fff' },
+  nodeLabelTextDark: {
+    ...type.labelSm,
+    fontFamily: 'Inter_600SemiBold',
+    color: mapTheme.onPrimary,
+  },
   destCircle: {
     width: 24,
     height: 24,
     borderRadius: 12,
-    backgroundColor: '#000',
+    backgroundColor: mapTheme.onBase,
     justifyContent: 'center',
     alignItems: 'center',
   },

@@ -1,26 +1,85 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import { PARCEL_VEHICLES } from '../data/mockData';
 import { useTheme } from '../theme/ThemeProvider';
+import { buildMapTheme } from '../theme/mapTheme';
 import { fonts } from '../theme/typography';
 import { Image } from 'react-native';
 import { socketService } from '../utils/socket';
 import { useAuth } from '../context/AuthContext';
+import RealMap from '../components/RealMap';
 
 const INSTRUCTION_CHIPS = ['+ Ring bell twice', '+ Leave at gate', '+ Call receiver'];
 
+const calculateParcelFare = (dist: number, type: string, weight: string) => {
+  const configs: any = {
+    'two-wheeler': { base: 25, perKm: 7, min: 30 },
+    'auto': { base: 45, perKm: 12, min: 60 }
+  };
+  const c = configs[type] || configs['two-wheeler'];
+  let weightSurge = 0;
+  if (weight === 'medium') weightSurge = 10;
+  if (weight === 'large') weightSurge = 20;
+  const fare = c.base + (dist * c.perKm) + weightSurge;
+  return Math.max(Math.round(fare), c.min);
+};
+
 export default function PackageVehicleScreen() {
-  const { colors } = useTheme();
+  const { colors, isDark } = useTheme();
+  const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
   const styles = createStyles(colors);
   const router = useRouter();
   const { user } = useAuth();
-  const [selectedVehicle, setSelectedVehicle] = useState('two-wheeler');
+  const params = useLocalSearchParams();
+
+  const pickupAddr = params.pickup as string || 'Greenways Road, RA Puram';
+  const dropoffAddr = params.dropoff as string || '12th Cross St, Indiranagar';
+  const pickupLat = parseFloat(params.pickupLat as string) || 13.0234;
+  const pickupLng = parseFloat(params.pickupLng as string) || 80.2524;
+  const dropoffLat = parseFloat(params.dropoffLat as string) || 13.0646;
+  const dropoffLng = parseFloat(params.dropoffLng as string) || 80.2319;
+  const distanceKm = parseFloat(params.distance as string) / 1000 || 6.2;
+  const durationMins = Math.ceil(parseFloat(params.duration as string) / 60) || 24;
+
+  const recipientName = params.recipientName as string || 'Priya Sharma';
+  const recipientPhone = params.recipientPhone as string || '+91 98765 43210';
+  const selectedCategory = params.selectedCategory as string || 'electronics';
+  const weightTier = params.weightTier as string || 'small';
+  const isFragile = params.isFragile === 'true';
+
+  const [selectedVehicleId, setSelectedVehicleId] = useState('two-wheeler');
   const [notes, setNotes] = useState('');
   const pendingRideRef = useRef<((data: any) => void) | null>(null);
+  const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
+
+  const dynamicVehicles = PARCEL_VEHICLES.map((v: any) => ({
+    ...v,
+    price: calculateParcelFare(distanceKm, v.id, weightTier),
+    eta: durationMins + ' mins',
+    distance: distanceKm.toFixed(1) + ' km'
+  }));
+
+  useEffect(() => {
+    // Fetch Mapbox Directions route for map polyline
+    const fetchRoute = async () => {
+      try {
+        const token = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${pickupLng},${pickupLat};${dropoffLng},${dropoffLat}?geometries=geojson&access_token=${token}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data.routes && data.routes.length > 0) {
+          setRouteCoords(data.routes[0].geometry.coordinates);
+        }
+      } catch (err) {
+        console.warn('Error fetching route:', err);
+      }
+    };
+    fetchRoute();
+  }, [pickupLat, pickupLng, dropoffLat, dropoffLng]);
 
   useEffect(() => {
     socketService.connect();
@@ -34,18 +93,28 @@ export default function PackageVehicleScreen() {
     return () => socketService.off('ride_requested', onRideRequested);
   }, []);
 
+  const vehicle = dynamicVehicles.find((v: any) => v.id === selectedVehicleId) || dynamicVehicles[0];
+  const isTwoWheeler = selectedVehicleId === 'two-wheeler';
+
   const requestParcel = () => {
     socketService.emit('request_ride', {
       type: 'parcel',
       customerId: user?.id,
       vehicle: vehicle.name,
       price: vehicle.price,
-      pickup: 'Greenways Road, RA Puram',
-      dropoff: '12th Cross St, Indiranagar',
+      pickup: { address: pickupAddr, lat: pickupLat, lng: pickupLng },
+      dropoff: { address: dropoffAddr, lat: dropoffLat, lng: dropoffLng },
       eta: vehicle.eta,
+      packageDetails: {
+        category: selectedCategory,
+        weightTier,
+        receiverName: recipientName,
+        receiverPhone: recipientPhone,
+        fragile: isFragile,
+        notes
+      }
     });
 
-    // Navigate only once the backend returns the real ride id + PIN.
     const fallback = setTimeout(() => router.push('/package-assigned'), 8000);
     pendingRideRef.current = (data: any) => {
       clearTimeout(fallback);
@@ -54,9 +123,6 @@ export default function PackageVehicleScreen() {
       router.push(`/package-assigned?rideId=${id}&otp=${otp}`);
     };
   };
-
-  const vehicle = PARCEL_VEHICLES.find((v: any) => v.id === selectedVehicle) || PARCEL_VEHICLES[0];
-  const isTwoWheeler = selectedVehicle === 'two-wheeler';
 
   const appendInstruction = (text: string) => {
     const clean = text.startsWith('+ ') ? text.slice(2) : text;
@@ -68,6 +134,19 @@ export default function PackageVehicleScreen() {
       <SharedHeader currentScreen="package-vehicle" title="Package Delivery Details" />
 
       <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+        {/* Map Preview */}
+        <View style={{ height: 180, borderRadius: 16, overflow: 'hidden', marginHorizontal: 20, marginTop: 16 }}>
+          <RealMap 
+            interactive={false}
+            style={{ width: '100%', height: '100%' }}
+            markers={[
+              { id: 'pickup', latitude: pickupLat, longitude: pickupLng, color: mapTheme.routeDone },
+              { id: 'dropoff', latitude: dropoffLat, longitude: dropoffLng, color: mapTheme.success }
+            ]}
+            routeCoordinates={routeCoords}
+          />
+        </View>
+
         {/* Route Timeline Card */}
         <View style={styles.routeCard}>
           <View style={styles.timelineRow}>
@@ -87,12 +166,12 @@ export default function PackageVehicleScreen() {
                   <View style={styles.stopSepDot} />
                   <Text style={styles.stopSender}>Sender: Me</Text>
                 </View>
-                <Text style={styles.stopAddress} numberOfLines={1}>Greenways Road, RA Puram</Text>
+                <Text style={styles.stopAddress} numberOfLines={1}>{pickupAddr}</Text>
               </View>
               <View style={styles.stopRow}>
                 <Text style={styles.stopLabelRed}>Drop-off Point</Text>
-                <Text style={styles.stopAddress} numberOfLines={1}>12th Cross St, Indiranagar</Text>
-                <Text style={styles.stopReceiver} numberOfLines={1}>Receiver: Priya Sharma • +91 98765 43210</Text>
+                <Text style={styles.stopAddress} numberOfLines={1}>{dropoffAddr}</Text>
+                <Text style={styles.stopReceiver} numberOfLines={1}>Receiver: {recipientName} • {recipientPhone}</Text>
               </View>
             </View>
             <TouchableOpacity style={styles.routeToggleBtn} activeOpacity={0.85}>
@@ -104,15 +183,15 @@ export default function PackageVehicleScreen() {
           <View style={styles.tagBar}>
             <View style={styles.tagPrimary}>
               <MaterialIcon name="inventory-2" size={16} color={colors.primary} />
-              <Text style={styles.tagPrimaryText}>Electronics / Document</Text>
+              <Text style={styles.tagPrimaryText}>{selectedCategory.toUpperCase()}</Text>
             </View>
             <View style={styles.tagMuted}>
               <MaterialIcon name="scale" size={14} color={colors.onSurfaceVariant} />
-              <Text style={styles.tagMutedText}>Small (&lt;5 kg)</Text>
+              <Text style={styles.tagMutedText}>{weightTier}</Text>
             </View>
             <View style={styles.tagMuted}>
-              <MaterialIcon name="verified" size={14} color={colors.onSurfaceVariant} />
-              <Text style={styles.tagMutedText}>Normal Handling</Text>
+              <MaterialIcon name={isFragile ? "warning" : "verified"} size={14} color={colors.onSurfaceVariant} />
+              <Text style={styles.tagMutedText}>{isFragile ? 'Fragile' : 'Normal Handling'}</Text>
             </View>
           </View>
         </View>
@@ -126,12 +205,12 @@ export default function PackageVehicleScreen() {
           </View>
         </View>
         <View style={styles.vehicleList}>
-          {PARCEL_VEHICLES.map((v: any) => {
-            const isSelected = selectedVehicle === v.id;
+          {dynamicVehicles.map((v: any) => {
+            const isSelected = selectedVehicleId === v.id;
             return (
               <TouchableOpacity
                 key={v.id}
-                onPress={() => setSelectedVehicle(v.id)}
+                onPress={() => setSelectedVehicleId(v.id)}
                 style={[styles.vehicleCard, isSelected ? styles.vehicleCardActive : styles.vehicleCardInactive]}
                 activeOpacity={0.9}
               >

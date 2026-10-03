@@ -42,7 +42,7 @@ export default function ChooseVehicleScreen() {
                 <Text style={styles.cardTitle}>Ematix Auto</Text>
                 <Text style={styles.cardDesc}>Quick, affordable rides</Text>
               </View>
-              <MaterialIcon name="arrow-forward" size={24} color={colors.onSurface} />
+              <MaterialIcon name="arrow-forward" size={24} color="#1C1C1E" />
             </View>
             <Image
               source={require('../../assets/images/auto.png')}
@@ -62,7 +62,7 @@ export default function ChooseVehicleScreen() {
                 <Text style={styles.cardTitle}>Prime Sedan</Text>
                 <Text style={styles.cardDesc}>Comfortable, premium rides</Text>
               </View>
-              <MaterialIcon name="arrow-forward" size={24} color={colors.onSurface} />
+              <MaterialIcon name="arrow-forward" size={24} color="#1C1C1E" />
             </View>
             <Image
               source={require('../../assets/images/car.png')}
@@ -127,12 +127,12 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   cardTitle: {
     ...type.headlineLg,
-    color: colors.onSurface,
+    color: '#1C1C1E', // Fixed dark color since card backgrounds are light
     fontFamily: fonts.bold,
   },
   cardDesc: {
     ...type.bodyMd,
-    color: colors.onSurfaceVariant,
+    color: '#48484A', // Fixed dark color since card backgrounds are light
     marginTop: 4,
   },
   cardImage: {

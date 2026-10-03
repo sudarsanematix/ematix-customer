@@ -8,9 +8,10 @@ import MaterialIcon from './MaterialIcon';
 interface SharedHeaderProps {
   currentScreen?: string;
   title?: string;
+  onBackPress?: () => void;
 }
 
-export default function SharedHeader({ currentScreen = 'home', title }: SharedHeaderProps) {
+export default function SharedHeader({ currentScreen = 'home', title, onBackPress }: SharedHeaderProps) {
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = createStyles(colors, isDark);
 
@@ -30,7 +31,9 @@ export default function SharedHeader({ currentScreen = 'home', title }: SharedHe
         {!isRootTab && (
           <TouchableOpacity
             onPress={() => {
-              if (router.canGoBack()) {
+              if (onBackPress) {
+                onBackPress();
+              } else if (router.canGoBack()) {
                 router.back();
               } else {
                 router.replace('/(tabs)/home');
@@ -43,12 +46,16 @@ export default function SharedHeader({ currentScreen = 'home', title }: SharedHe
           </TouchableOpacity>
         )}
         {isRootTab && (
-          <View style={styles.logoRow}>
+          <TouchableOpacity 
+            style={styles.logoRow}
+            activeOpacity={0.7}
+            onPress={() => router.replace('/(tabs)/home')}
+          >
             <View style={styles.logoPlaceholder}>
               <Text style={styles.logoText}>E</Text>
             </View>
             <Text style={styles.brandName}>Ematix</Text>
-          </View>
+          </TouchableOpacity>
         )}
         {!isRootTab && (
           <Text style={styles.screenTitle} numberOfLines={1}>{displayTitle}</Text>

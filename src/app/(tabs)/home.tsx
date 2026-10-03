@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import {
   View,
   Text,
@@ -13,6 +13,7 @@ import {
 import { useRouter } from 'expo-router';
 import { SAVED_PLACES } from '../../data/mockData';
 import { useTheme } from '../../theme/ThemeProvider';
+import { buildMapTheme, type MapThemeTokens } from '../../theme/mapTheme';
 import { fonts, type, spacing, radius } from '../../theme/typography';
 import SharedHeader from '../../components/SharedHeader';
 import MaterialIcon from '../../components/MaterialIcon';
@@ -20,12 +21,13 @@ import RealMap from '../../components/RealMap';
 import Skeleton from '../../components/Skeleton';
 import { useAuth } from '../../context/AuthContext';
 import { socketService } from '../../utils/socket';
-import { MapMarker } from '../../components/RealMap';
+import { MapMarker, CHENNAI_REGION } from '../../components/RealMap';
 import * as Location from 'expo-location';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 function PingRing({ color, size }: { color: string; size: number }) {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, buildMapTheme(isDark));
   const [anim] = useState(() => new Animated.Value(0));
 
   useEffect(() => {
@@ -97,8 +99,8 @@ function DriftingPin({
   icon: 'electric-rickshaw' | 'directions-car';
   delay?: number;
 }) {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const styles = createStyles(colors, buildMapTheme(isDark));
   const [translate] = useState(() => new Animated.ValueXY({ x: 0, y: 0 }));
 
   useEffect(() => {
@@ -142,28 +144,117 @@ function DriftingPin({
 // Places are moved inside component to access dynamic colors
 
 export default function HomeScreen() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
+  const styles = createStyles(colors, mapTheme);
 
   const router = useRouter();
   const { user } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [nearbyPartners, setNearbyPartners] = useState<any[]>([]);
   const [myLocation, setMyLocation] = useState<{ latitude: number, longitude: number } | null>(null);
+  const [bootRegion, setBootRegion] = useState<{ latitude: number, longitude: number, latitudeDelta: number, longitudeDelta: number } | null>(null);
+  const [addressName, setAddressName] = useState('Locating...');
+  const [scrollEnabled, setScrollEnabled] = useState(true);
 
   const locateMe = async () => {
+    setAddressName('Locating...');
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
-        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Highest });
-        setMyLocation({ latitude: loc.coords.latitude, longitude: loc.coords.longitude });
+        const loc = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+        const lat = loc.coords.latitude;
+        const lng = loc.coords.longitude;
+        setMyLocation({ latitude: lat, longitude: lng });
+        
+        // Cache valid GPS fix for next startup
+        if (loc.coords.accuracy && loc.coords.accuracy < 1000) {
+          AsyncStorage.setItem('@last_known_location', JSON.stringify({
+            latitude: lat,
+            longitude: lng,
+            latitudeDelta: 0.05,
+            longitudeDelta: 0.05
+          })).catch(() => {});
+        }
+
+        const fetchOSM = async (lat: number, lng: number) => {
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, {
+              headers: { 'User-Agent': 'EmatixApp/1.0' }
+            });
+            const data = await res.json();
+            if (data && data.address) {
+              const addr = data.address;
+              const street = addr.road || addr.pedestrian || '';
+              const area = addr.neighbourhood || addr.suburb || addr.city_district || addr.city || addr.town || '';
+              if (street && area && street !== area) return `${street}, ${area}`;
+              if (area) return area;
+              if (street) return street;
+              return data.name || data.display_name?.split(',')[0] || null;
+            }
+          } catch (e) {
+            return null;
+          }
+          return null;
+        };
+        
+        try {
+          const geocode = await Location.reverseGeocodeAsync({ latitude: lat, longitude: lng });
+          if (geocode && geocode.length > 0) {
+            const place = geocode[0];
+            
+            // Build a more user-friendly location name
+            const streetInfo = [place.streetNumber, place.street].filter(Boolean).join(' ');
+            const neighborhood = place.district || place.subregion || place.city || place.region;
+            
+            let finalName = '';
+            if (place.name && place.name !== streetInfo && place.name !== neighborhood) {
+              finalName = place.name;
+              if (neighborhood) finalName += `, ${neighborhood}`;
+            } else if (streetInfo) {
+              finalName = streetInfo;
+              if (neighborhood) finalName += `, ${neighborhood}`;
+            } else if (neighborhood) {
+              finalName = neighborhood;
+            }
+            
+            if (!finalName) {
+              finalName = (await fetchOSM(lat, lng)) || place.country || `${lat.toFixed(3)}, ${lng.toFixed(3)}`;
+            }
+            
+            setAddressName(finalName);
+          } else {
+            const osmName = await fetchOSM(lat, lng);
+            setAddressName(osmName || `${lat.toFixed(3)}, ${lng.toFixed(3)}`);
+          }
+        } catch (err) {
+          // If geocoding fails, at least show coordinates so we know it worked!
+          const osmName = await fetchOSM(lat, lng);
+          setAddressName(osmName || `${lat.toFixed(3)}, ${lng.toFixed(3)}`);
+        }
+      } else {
+        setAddressName('Location denied');
       }
     } catch (err) {
-      // Silently ignore if location services are disabled, to avoid yellow box warnings
+      setAddressName('Location unavailable');
     }
   };
 
   useEffect(() => {
+    const loadCache = async () => {
+      try {
+        const cached = await AsyncStorage.getItem('@last_known_location');
+        if (cached) {
+          setBootRegion(JSON.parse(cached));
+        } else {
+          setBootRegion(CHENNAI_REGION);
+        }
+      } catch (e) {
+        setBootRegion(CHENNAI_REGION);
+      }
+    };
+    loadCache();
+    
     locateMe();
 
     // Simulate fetching data from backend
@@ -202,7 +293,11 @@ export default function HomeScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <SharedHeader currentScreen="home" />
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.container} 
+        showsVerticalScrollIndicator={false}
+        scrollEnabled={scrollEnabled}
+      >
         {/* Greeting + location */}
         <View style={styles.greetingRow}>
           <View>
@@ -211,9 +306,9 @@ export default function HomeScreen() {
             ) : (
               <Text style={styles.greeting}>Hello, {user?.name || user?.phone || 'Guest'} 👋</Text>
             )}
-            <TouchableOpacity style={styles.locationBtn} activeOpacity={0.8}>
+            <TouchableOpacity style={styles.locationBtn} activeOpacity={0.8} onPress={locateMe}>
               <MaterialIcon name="near-me" size={18} color={colors.primary} />
-              <Text style={styles.locationText}>74th St, T. Nagar, Chennai</Text>
+              <Text style={styles.locationText} numberOfLines={1}>{addressName}</Text>
               <MaterialIcon name="expand-more" size={16} color={colors.outline} />
             </TouchableOpacity>
           </View>
@@ -246,10 +341,12 @@ export default function HomeScreen() {
             </TouchableOpacity>
           </View>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tagsRow}>
-            <TouchableOpacity style={styles.tag}>
-              <MaterialIcon name="work" size={16} color={colors.primary} />
-              <Text style={styles.tagText}>Work • Express Ave</Text>
-            </TouchableOpacity>
+            {user?.savedLocations?.find((loc: any) => loc.name.toLowerCase() === 'work') && (
+              <TouchableOpacity style={styles.tag}>
+                <MaterialIcon name="work" size={16} color={colors.primary} />
+                <Text style={[styles.tagText, { maxWidth: 150 }]} numberOfLines={1}>Work • {user?.savedLocations?.find((loc: any) => loc.name.toLowerCase() === 'work')?.address}</Text>
+              </TouchableOpacity>
+            )}
             <TouchableOpacity style={styles.tag}>
               <MaterialIcon name="shopping-bag" size={16} color={colors.accentRed} />
               <Text style={styles.tagText}>Phoenix Marketcity</Text>
@@ -294,7 +391,7 @@ export default function HomeScreen() {
             </View>
             <Text style={styles.actionTitle}>Send Parcel</Text>
             <Text style={styles.actionDesc}>Instant delivery via Two-wheelers & Autos</Text>
-            <TouchableOpacity style={[styles.actionBtn, styles.sendBtn]} activeOpacity={0.85} onPress={() => router.push('/package-details')}>
+            <TouchableOpacity style={[styles.actionBtn, styles.sendBtn]} activeOpacity={0.85} onPress={() => router.push('/destination-search?vehicle=parcel')}>
               <Text style={styles.sendBtnText}>Send Now</Text>
               <MaterialIcon name="send" size={16} color={colors.primary} />
             </TouchableOpacity>
@@ -349,28 +446,35 @@ export default function HomeScreen() {
           <View style={styles.radarHeader}>
             <View>
               <Text style={styles.radarTitle}>Live Vehicles Nearby</Text>
-              <Text style={styles.radarSubtitle}>14 Drivers active in T. Nagar grid</Text>
+              <Text style={styles.radarSubtitle}>{nearbyPartners.length} Drivers active near {addressName}</Text>
             </View>
             <View style={styles.liveBadge}>
               <PulsingDot color={colors.primary} />
               <Text style={styles.liveText}>Live Radar</Text>
             </View>
           </View>
-          <View style={styles.mapBox}>
-            <RealMap 
-              interactive 
-              style={styles.mapImage}
-              region={myLocation ? { latitude: myLocation.latitude, longitude: myLocation.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : undefined}
-              markers={[
-                ...(myLocation ? [{ id: 'me', latitude: myLocation.latitude, longitude: myLocation.longitude, color: '#007AFF' }] : []),
+          <View 
+            style={styles.mapBox}
+            onTouchStart={() => setScrollEnabled(false)}
+            onTouchEnd={() => setScrollEnabled(true)}
+            onTouchCancel={() => setScrollEnabled(true)}
+          >
+            {bootRegion ? (
+              <RealMap 
+                interactive 
+                style={styles.mapImage}
+                region={myLocation ? { latitude: myLocation.latitude, longitude: myLocation.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : bootRegion}
+                markers={[
+                ...(myLocation ? [{ id: 'me', latitude: myLocation.latitude, longitude: myLocation.longitude, color: mapTheme.onBase }] : []),
                 ...nearbyPartners.map(p => ({
                   id: p.partnerId,
                   latitude: p.lat,
                   longitude: p.lng,
-                  color: p.vehicleType === 'bike' || p.vehicleType === 'auto' ? '#C52A2E' : '#00217C'
+                  color: p.vehicleType === 'bike' || p.vehicleType === 'auto' ? mapTheme.success : mapTheme.routeDone
                 }))
               ]}
             />
+            ) : null}
             <TouchableOpacity 
               style={{ position: 'absolute', bottom: 16, right: 16, backgroundColor: colors.surface, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 }}
               activeOpacity={0.8}
@@ -414,17 +518,18 @@ export default function HomeScreen() {
                   <Skeleton width={70} height={36} radius={8} />
                 </View>
               ))
-              : SAVED_PLACES.map((p: any) => {
-                const placeCfg = HOME_PLACE_ICONS(colors)[p.tagType] || HOME_PLACE_ICONS(colors).default;
+              : (user?.savedLocations || []).map((p: any, index: number) => {
+                const tagType = p.name.toLowerCase();
+                const placeCfg = HOME_PLACE_ICONS(colors)[tagType] || HOME_PLACE_ICONS(colors).default;
                 return (
-                  <TouchableOpacity key={p.title} style={styles.recentCard} activeOpacity={0.9}>
+                  <TouchableOpacity key={index.toString()} style={styles.recentCard} activeOpacity={0.9}>
                     <View style={styles.recentCardLeft}>
                       <View style={[styles.recentIconWrap, { backgroundColor: placeCfg.bg }]}>
                         <MaterialIcon name={placeCfg.icon} size={22} color={placeCfg.color} />
                       </View>
                       <View style={styles.recentTextWrap}>
-                        <Text style={styles.recentTitle} numberOfLines={1}>{p.title}</Text>
-                        <Text style={styles.recentAddr} numberOfLines={1}>{p.subtitle}</Text>
+                        <Text style={styles.recentTitle} numberOfLines={1}>{p.name}</Text>
+                        <Text style={styles.recentAddr} numberOfLines={1}>{p.address}</Text>
                       </View>
                     </View>
                     <TouchableOpacity style={styles.rebookBtn} activeOpacity={0.85}>
@@ -453,7 +558,7 @@ export default function HomeScreen() {
   );
 }
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: colors.surface },
   container: {
     padding: spacing.marginMobile,
@@ -752,7 +857,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0,33,124,0.10)',
+    backgroundColor: mapTheme.brandTint,
   },
   pinWrap: {
     position: 'absolute',
@@ -819,7 +924,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
-    backgroundColor: 'rgba(255,255,255,0.9)',
+    backgroundColor: mapTheme.glass,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: radius.md,

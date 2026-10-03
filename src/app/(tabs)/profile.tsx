@@ -17,7 +17,6 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, type, spacing, radius } from '../../theme/typography';
 import SharedHeader from '../../components/SharedHeader';
 import MaterialIcon from '../../components/MaterialIcon';
-import { SAVED_PLACES } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 
 const STATS = [
@@ -26,6 +25,7 @@ const STATS = [
   { label: 'Ematix Points', value: '1,240', icon: 'stars' },
 ] as const;
 
+// Mock data for FAQs
 const FAQS = [
   {
     q: 'How do I book a ride with Ematix?',
@@ -39,11 +39,6 @@ const FAQS = [
     q: 'How does Ask Ematix plan trips?',
     a: 'Tell it your destination or weekend plan and it builds a stop-by-stop itinerary with suggested vehicles and fares — each leg bookable in one tap.',
   },
-] as const;
-
-const EMERGENCY_CONTACTS = [
-  { name: 'Priya R.', relation: 'Sister', phone: '+91 98100 22334' },
-  { name: 'Rahul M.', relation: 'Friend', phone: '+91 90001 12233' },
 ] as const;
 
 type SheetId =
@@ -156,11 +151,20 @@ export default function ProfileScreen() {
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
-  const { user, logout } = useAuth();
+  const { user, token, logout, login } = useAuth();
 
   const [sheet, setSheet] = useState<SheetId>(null);
   const [logoutOpen, setLogoutOpen] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+
+  const [addAddressVisible, setAddAddressVisible] = useState(false);
+  const [newAddressName, setNewAddressName] = useState('');
+  const [newAddressText, setNewAddressText] = useState('');
+
+  const [addContactVisible, setAddContactVisible] = useState(false);
+  const [newContactName, setNewContactName] = useState('');
+  const [newContactRelation, setNewContactRelation] = useState('');
+  const [newContactPhone, setNewContactPhone] = useState('');
 
   const [userName, setUserName] = useState(user?.name || 'Guest');
   const [userPhone, setUserPhone] = useState(user?.phone || 'No phone set');
@@ -192,6 +196,113 @@ export default function ProfileScreen() {
   const removePayment = (id: string) => {
     setPayments((p) => p.filter((x) => x.id !== id));
     showToast('Payment method removed');
+  };
+
+  const saveNewAddress = async () => {
+    if (!newAddressName.trim() || !newAddressText.trim()) {
+      showToast('Name and Address are required');
+      return;
+    }
+    try {
+      const currentLocs = user?.savedLocations || [];
+      const updated = [...currentLocs, { name: newAddressName.trim(), address: newAddressText.trim() }];
+      const res = await fetch('http://192.168.1.34:4000/api/auth/customer/saved-locations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ savedLocations: updated })
+      });
+      const data = await res.json();
+      if (data.success && data.user && token) {
+        await login(data.user, token);
+        setAddAddressVisible(false);
+        setNewAddressName('');
+        setNewAddressText('');
+        showToast('Address saved');
+      } else {
+        showToast('Failed to save address');
+      }
+    } catch (e) {
+      showToast('Network error');
+    }
+  };
+
+  const removeAddress = async (nameToRemove: string) => {
+    try {
+      const currentLocs = user?.savedLocations || [];
+      const updated = currentLocs.filter((l: any) => l.name !== nameToRemove);
+      const res = await fetch('http://192.168.1.34:4000/api/auth/customer/saved-locations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ savedLocations: updated })
+      });
+      const data = await res.json();
+      if (data.success && data.user && token) {
+        await login(data.user, token);
+        showToast('Address removed');
+      }
+    } catch (e) {
+      showToast('Network error');
+    }
+  };
+
+  const saveNewContact = async () => {
+    if (!newContactName.trim() || !newContactPhone.trim()) {
+      showToast('Name and Phone are required');
+      return;
+    }
+    try {
+      const currentContacts = user?.emergencyContacts || [];
+      const updated = [...currentContacts, { name: newContactName.trim(), relation: newContactRelation.trim() || 'Friend', phone: newContactPhone.trim() }];
+      const res = await fetch('http://192.168.1.34:4000/api/auth/customer/emergency-contacts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ emergencyContacts: updated })
+      });
+      const data = await res.json();
+      if (data.success && data.user && token) {
+        await login(data.user, token);
+        setAddContactVisible(false);
+        setNewContactName('');
+        setNewContactRelation('');
+        setNewContactPhone('');
+        showToast('Contact saved');
+      } else {
+        showToast('Failed to save contact');
+      }
+    } catch (e) {
+      showToast('Network error');
+    }
+  };
+
+  const removeContact = async (phoneToRemove: string) => {
+    try {
+      const currentContacts = user?.emergencyContacts || [];
+      const updated = currentContacts.filter((c: any) => c.phone !== phoneToRemove);
+      const res = await fetch('http://192.168.1.34:4000/api/auth/customer/emergency-contacts', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ emergencyContacts: updated })
+      });
+      const data = await res.json();
+      if (data.success && data.user && token) {
+        await login(data.user, token);
+        showToast('Contact removed');
+      }
+    } catch (e) {
+      showToast('Network error');
+    }
   };
 
   return (
@@ -236,7 +347,7 @@ export default function ProfileScreen() {
           <Text style={styles.groupTitle}>Account</Text>
           <Row icon="account-balance-wallet" label="Wallet" sublabel="Balance & top-up" onPress={() => router.push('/wallet')} />
           <Row icon="credit-card" label="Payment Methods" sublabel={payments.length ? `${payments.length} linked` : 'None'} onPress={() => setSheet('payments')} />
-          <Row icon="location-on" label="Saved Addresses" sublabel={`${SAVED_PLACES.length} saved`} onPress={() => setSheet('addresses')} />
+          <Row icon="location-on" label="Saved Addresses" sublabel={`${user?.savedLocations?.length || 0} saved`} onPress={() => setSheet('addresses')} />
           <Row icon="notifications-none" label="Notifications" onPress={() => setSheet('notifications')} />
           <Row icon="settings" label="Settings" sublabel="Appearance, language & more" onPress={() => router.push('/settings')} last />
         </View>
@@ -244,7 +355,7 @@ export default function ProfileScreen() {
         {/* Safety & Support */}
         <View style={styles.optionsGroup}>
           <Text style={styles.groupTitle}>Safety & Support</Text>
-          <Row icon="shield" label="Emergency Contacts" sublabel={`${EMERGENCY_CONTACTS.length} added`} onPress={() => setSheet('emergency')} />
+          <Row icon="shield" label="Emergency Contacts" sublabel={`${user?.emergencyContacts?.length || 0} added`} onPress={() => setSheet('emergency')} />
           <Row icon="help-outline" label="Help Center" onPress={() => setSheet('help')} />
           <Row icon="tune" label="Preferences" onPress={() => setSheet('preferences')} last />
         </View>
@@ -326,23 +437,37 @@ export default function ProfileScreen() {
 
       {/* Saved Addresses */}
       <Sheet visible={sheet === 'addresses'} title="Saved Addresses" onClose={() => setSheet(null)}>
-        {SAVED_PLACES.map((p: any, i: number) => (
-          <View key={p.title} style={styles.addressCard}>
+        {user?.savedLocations?.map((p: any, i: number) => (
+          <View key={p.name + i} style={styles.addressCard}>
             <View style={styles.addressIconWrap}>
-              <MaterialIcon name={p.tagType === 'home' ? 'home' : p.tagType === 'work' ? 'corporate-fare' : 'sports-tennis'} size={18} color={colors.primary} />
+              <MaterialIcon name={p.name.toLowerCase() === 'home' ? 'home' : p.name.toLowerCase() === 'work' ? 'corporate-fare' : 'location-on'} size={18} color={colors.primary} />
             </View>
             <View style={styles.paymentTextWrap}>
-              <Text style={styles.paymentTitle}>{p.title}</Text>
-              <Text style={styles.paymentSub}>{p.subtitle}</Text>
+              <Text style={styles.paymentTitle}>{p.name}</Text>
+              <Text style={styles.paymentSub}>{p.address}</Text>
             </View>
-            <TouchableOpacity style={styles.defaultBtn} activeOpacity={0.85} onPress={() => showToast(`${p.title} set as default`)}>
-              <Text style={styles.defaultBtnText}>{i === 0 ? 'Default' : 'Set'}</Text>
+            <TouchableOpacity style={styles.defaultBtn} activeOpacity={0.85} onPress={() => removeAddress(p.name)}>
+              <Text style={styles.removeText}>Remove</Text>
             </TouchableOpacity>
           </View>
         ))}
-        <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => showToast('Add address coming soon')}>
+        {(!user?.savedLocations || user.savedLocations.length === 0) && (
+          <Text style={styles.emptyText}>No saved addresses yet.</Text>
+        )}
+        <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => { setSheet(null); setAddAddressVisible(true); }}>
           <MaterialIcon name="add" size={18} color={colors.primary} />
           <Text style={styles.addBtnText}>Add new address</Text>
+        </TouchableOpacity>
+      </Sheet>
+
+      {/* Add Address Form */}
+      <Sheet visible={addAddressVisible} title="Add Address" onClose={() => setAddAddressVisible(false)}>
+        <Text style={styles.fieldLabel}>Name (e.g., Home, Work)</Text>
+        <TextInput style={styles.input} value={newAddressName} onChangeText={setNewAddressName} placeholder="Home" placeholderTextColor={colors.textMuted} />
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Address</Text>
+        <TextInput style={styles.input} value={newAddressText} onChangeText={setNewAddressText} placeholder="123 Main St..." placeholderTextColor={colors.textMuted} />
+        <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={saveNewAddress}>
+          <Text style={styles.primaryBtnText}>Save Address</Text>
         </TouchableOpacity>
       </Sheet>
 
@@ -356,8 +481,8 @@ export default function ProfileScreen() {
 
       {/* Emergency Contacts */}
       <Sheet visible={sheet === 'emergency'} title="Emergency Contacts" onClose={() => setSheet(null)}>
-        {EMERGENCY_CONTACTS.map((c) => (
-          <TouchableOpacity key={c.phone} style={[styles.paymentCard, styles.optionRowLast]} activeOpacity={0.7} onPress={() => showToast(`Calling ${c.name} \u2026`)}>
+        {user?.emergencyContacts?.map((c: any, i: number) => (
+          <View key={c.phone + i} style={[styles.paymentCard, styles.optionRowLast]}>
             <View style={styles.avatarWrapSm}>
               <MaterialIcon name="person" size={18} color={colors.onPrimary} />
             </View>
@@ -365,10 +490,15 @@ export default function ProfileScreen() {
               <Text style={styles.paymentTitle}>{c.name}</Text>
               <Text style={styles.paymentSub}>{c.relation} \u2022 {c.phone}</Text>
             </View>
-            <MaterialIcon name="call" size={20} color={colors.primary} />
-          </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.8} onPress={() => removeContact(c.phone)} hitSlop={8}>
+              <Text style={styles.removeText}>Remove</Text>
+            </TouchableOpacity>
+          </View>
         ))}
-        <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => showToast('Add SOS contact coming soon')}>
+        {(!user?.emergencyContacts || user.emergencyContacts.length === 0) && (
+          <Text style={styles.emptyText}>No emergency contacts added yet.</Text>
+        )}
+        <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => { setSheet(null); setAddContactVisible(true); }}>
           <MaterialIcon name="add" size={18} color={colors.primary} />
           <Text style={styles.addBtnText}>Add emergency contact</Text>
         </TouchableOpacity>
@@ -378,6 +508,19 @@ export default function ProfileScreen() {
             In an active ride, Shakti SOS shares your live location with these contacts.
           </Text>
         </View>
+      </Sheet>
+
+      {/* Add Contact Form */}
+      <Sheet visible={addContactVisible} title="Add Contact" onClose={() => setAddContactVisible(false)}>
+        <Text style={styles.fieldLabel}>Name</Text>
+        <TextInput style={styles.input} value={newContactName} onChangeText={setNewContactName} placeholder="Jane Doe" placeholderTextColor={colors.textMuted} />
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Relation</Text>
+        <TextInput style={styles.input} value={newContactRelation} onChangeText={setNewContactRelation} placeholder="Friend, Sister, etc." placeholderTextColor={colors.textMuted} />
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Phone Number</Text>
+        <TextInput style={styles.input} value={newContactPhone} onChangeText={setNewContactPhone} placeholder="+91 9876543210" placeholderTextColor={colors.textMuted} keyboardType="phone-pad" />
+        <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={saveNewContact}>
+          <Text style={styles.primaryBtnText}>Save Contact</Text>
+        </TouchableOpacity>
       </Sheet>
 
       {/* Help Center */}

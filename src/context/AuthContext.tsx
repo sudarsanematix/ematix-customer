@@ -1,11 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { socketService } from '../utils/socket';
 
 type User = {
   id: string;
   phone: string;
   name: string;
   email?: string;
+  savedLocations?: { name: string; address: string; lat?: number; lng?: number }[];
+  emergencyContacts?: { name: string; relation: string; phone: string }[];
 };
 
 type AuthContextType = {
@@ -30,6 +33,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (storedToken && storedUser) {
           setToken(storedToken);
           setUser(JSON.parse(storedUser));
+          // The socket handshake requires this token, so it must be handed
+          // over before any ride screen mounts.
+          socketService.setToken(storedToken);
         }
       } catch (e) {
         console.error('Failed to load auth state', e);
@@ -43,6 +49,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(authToken);
     await AsyncStorage.setItem('@ematix_token', authToken);
     await AsyncStorage.setItem('@ematix_user', JSON.stringify(userData));
+    socketService.setToken(authToken);
   };
 
   const logout = async () => {
@@ -50,6 +57,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     await AsyncStorage.removeItem('@ematix_token');
     await AsyncStorage.removeItem('@ematix_user');
+    socketService.disconnect();
+    socketService.setToken(null);
   };
 
   return (

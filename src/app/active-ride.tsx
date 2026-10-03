@@ -1,14 +1,19 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
-import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Path, Circle } from 'react-native-svg';
 import * as Linking from 'expo-linking';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
-import RealMap from '../components/RealMap';
+import LiveMap, {
+  type LiveMapHandle,
+  type LiveVehicle,
+  type LiveVehicleKind,
+  type LngLat,
+  type LivePin,
+} from '../components/LiveMap';
 import { useTheme } from '../theme/ThemeProvider';
+import { buildMapTheme, type MapThemeTokens } from '../theme/mapTheme';
 import { fonts } from '../theme/typography';
 import { socketService } from '../utils/socket';
 import { useAuth } from '../context/AuthContext';
@@ -47,40 +52,75 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 export default function ActiveRideScreen() {
-  const { colors } = useTheme();
-  const styles = createStyles(colors);
+  const { colors, isDark } = useTheme();
+  const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
+  const styles = createStyles(colors, mapTheme);
   const router = useRouter();
   const { user } = useAuth();
   const { rideId, vehicle } = useLocalSearchParams<{ rideId: string, vehicle?: string }>();
   const isCar = vehicle === 'car';
-  const [driverOffset] = useState(() => new Animated.Value(0));
   const [ride, setRide] = useState<RideData | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
   const [pulse] = useState(() => new Animated.Value(0));
   const focusedRef = useRef(true);
 
+  const [driver, setDriver] = useState<LiveVehicle | null>(null);
+  const [follow, setFollow] = useState(true);
+  const [routeCoords, setRouteCoords] = useState<LngLat[]>([]);
+  const mapRef = useRef<LiveMapHandle | null>(null);
+
   const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] });
   const ringOpacity = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0.6, 0] });
 
+  const vehicleKind: LiveVehicleKind = isCar ? 'prime_sedan' : 'auto';
+
+  const getLocCoords = (loc: any) => {
+    if (!loc) return null;
+    const lat = loc.latitude ?? loc.lat;
+    const lng = loc.longitude ?? loc.lng;
+    const parsedLat = typeof lat === 'number' ? lat : parseFloat(lat);
+    const parsedLng = typeof lng === 'number' ? lng : parseFloat(lng);
+    if (!isNaN(parsedLat) && !isNaN(parsedLng)) {
+      return [parsedLng, parsedLat] as LngLat;
+    }
+    return null;
+  };
+
+  const pickupCoords = useMemo(() => getLocCoords(ride?.pickup), [ride?.pickup]);
+  const dropoffCoords = useMemo(() => getLocCoords(ride?.dropoff), [ride?.dropoff]);
+
+  const driverKey = driver ? `${driver.lngLat[0].toFixed(3)},${driver.lngLat[1].toFixed(3)}` : 'none';
+
+  // Dynamic route fetching based on ride phase and driver location
   useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(driverOffset, {
-          toValue: 1,
-          duration: 1400,
-          useNativeDriver: true,
-        }),
-        Animated.timing(driverOffset, {
-          toValue: 0,
-          duration: 1400,
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [driverOffset]);
+    if (!ride?.status || !pickupCoords || !dropoffCoords) return;
+
+    let start: LngLat, end: LngLat;
+    const toPickup = ['pending', 'accepted', 'en_route_pickup'].includes(ride.status);
+    if (toPickup) {
+      start = driver ? driver.lngLat : pickupCoords;   // no driver yet: show pickup -> dropoff
+      end = driver ? pickupCoords : dropoffCoords;
+    } else {
+      start = driver ? driver.lngLat : pickupCoords;
+      end = dropoffCoords;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving-traffic/${start[0]},${start[1]};${end[0]},${end[1]}?geometries=geojson&access_token=${process.env.EXPO_PUBLIC_MAPBOX_TOKEN}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        const coords = data.routes?.[0]?.geometry?.coordinates;
+        if (!cancelled && coords?.length) setRouteCoords(coords);
+        else if (!coords) console.warn('Directions failed', data.code, data.message);
+      } catch (e) {
+        console.warn('Route fetch failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [ride?.status, pickupCoords, dropoffCoords, driverKey]);
 
   useEffect(() => {
     socketService.connect();
@@ -94,12 +134,24 @@ export default function ActiveRideScreen() {
       setRide(data);
       setHasUnread(getUnread(data.id));
       if (data.status === 'completed') {
-        router.replace(`/ride-completed?rideId=${rideId}`);
+        if (data.type === 'parcel') {
+          router.replace(`/package-delivered?rideId=${rideId}`);
+        } else {
+          router.replace(`/ride-completed?rideId=${rideId}`);
+        }
       }
     };
 
     const handleCompleted = () => {
-      router.replace(`/ride-completed?rideId=${rideId}`);
+      // Need a way to know if it was a parcel from the latest ride state.
+      setRide((currentRide) => {
+        if (currentRide?.type === 'parcel') {
+          router.replace(`/package-delivered?rideId=${rideId}`);
+        } else {
+          router.replace(`/ride-completed?rideId=${rideId}`);
+        }
+        return currentRide;
+      });
     };
 
     const handleStatus = (data: { rideId: string; status: string }) => {
@@ -131,12 +183,31 @@ export default function ActiveRideScreen() {
       }
     };
 
+    // The partner streams their real position while the ride is live. The
+    // server only forwards this to sockets in this ride's room, so no other
+    // customer can receive it.
+    const handleDriverLocation = (data: {
+      rideId: string;
+      lat: number;
+      lng: number;
+      bearing?: number | null;
+    }) => {
+      if (data.rideId !== rideId) return;
+      if (!Number.isFinite(data.lat) || !Number.isFinite(data.lng)) return;
+      setDriver((prev) => ({
+        lngLat: [data.lng, data.lat],
+        bearing: typeof data.bearing === 'number' ? data.bearing : prev?.bearing,
+        kind: vehicleKind,
+      }));
+    };
+
     socketService.on('ride_details', handleDetails);
     socketService.on('ride_completed', handleCompleted);
     socketService.on('ride_status_updated', handleStatus);
     socketService.on('ride_started', handleStarted);
     socketService.on('receive_message', handleIncoming);
     socketService.on('ride_error', handleError);
+    socketService.on('driver_location', handleDriverLocation);
 
     return () => {
       socketService.off('ride_details', handleDetails);
@@ -145,8 +216,9 @@ export default function ActiveRideScreen() {
       socketService.off('ride_started', handleStarted);
       socketService.off('receive_message', handleIncoming);
       socketService.off('ride_error', handleError);
+      socketService.off('driver_location', handleDriverLocation);
     };
-  }, [rideId, user?.id, router, pulse]);
+  }, [rideId, user?.id, router, pulse, vehicleKind]);
 
   useFocusEffect(() => {
     focusedRef.current = true;
@@ -156,7 +228,21 @@ export default function ActiveRideScreen() {
   });
 
   const handleMapTap = () => {
-    router.replace(`/ride-completed?rideId=${rideId}`);
+    if (ride?.type === 'parcel') {
+      router.replace(`/package-delivered?rideId=${rideId}`);
+    } else {
+      router.replace(`/ride-completed?rideId=${rideId}`);
+    }
+  };
+
+  /**
+   * Re-arms follow mode. The map engine turns follow off by itself as soon as
+   * the user pans, so this has to re-enable it on both sides — otherwise the
+   * `follow` prop and the engine disagree and the button appears to do nothing.
+   */
+  const recenter = () => {
+    setFollow(true);
+    mapRef.current?.focusVehicle();
   };
 
   const callPartner = () => {
@@ -178,7 +264,20 @@ export default function ActiveRideScreen() {
     .join('')
     .toUpperCase();
 
-  const statusLabel = ride ? STATUS_LABELS[ride.status] || 'Ride in progress' : 'Connecting...';
+  const getStatusLabel = (r: RideData) => {
+    if (r.type === 'parcel') {
+       if (r.status === 'pending') return 'Finding a delivery partner';
+       if (r.status === 'accepted' || r.status === 'en_route_pickup') return 'Partner on the way to pick up package';
+       if (r.status === 'arrived') return 'Partner arrived for pickup';
+       if (r.status === 'en_route_dropoff') return 'Package in transit to receiver';
+       if (r.status === 'completed') return 'Package delivered';
+       if (r.status === 'cancelled') return 'Delivery cancelled';
+       return 'Delivery in progress';
+    }
+    return STATUS_LABELS[r.status] || 'Ride in progress';
+  };
+
+  const statusLabel = ride ? getStatusLabel(ride) : 'Connecting...';
   const progress = ride
     ? ride.status === 'pending' || ride.status === 'accepted' || ride.status === 'en_route_pickup' ? 20
       : ride.status === 'arrived' ? 50
@@ -186,8 +285,21 @@ export default function ActiveRideScreen() {
       : 100
     : 0;
 
-  const markerX = driverOffset.interpolate({ inputRange: [0, 1], outputRange: [-50, -47] });
-  const markerY = driverOffset.interpolate({ inputRange: [0, 1], outputRange: [-50, -48.5] });
+  const pins: LivePin[] = useMemo(() => {
+    const arr: LivePin[] = [];
+    if (pickupCoords && ride?.status !== 'en_route_dropoff' && ride?.status !== 'completed') {
+      arr.push({ id: 'pickup', lngLat: pickupCoords, color: mapTheme.routeDone, variant: 'dot' });
+    }
+    if (dropoffCoords) {
+      arr.push({ id: 'dropoff', lngLat: dropoffCoords, color: mapTheme.success, variant: 'end' });
+    }
+    return arr;
+  }, [pickupCoords, dropoffCoords, ride?.status, mapTheme]);
+
+  const route = useMemo(
+    () => (routeCoords.length > 0 ? { coordinates: routeCoords } : null),
+    [routeCoords]
+  );
 
   if (unavailable) {
     return (
@@ -210,62 +322,20 @@ export default function ActiveRideScreen() {
       <SharedHeader currentScreen="active-ride" title="Active Ride Tracking" />
 
       <ScrollView style={styles.container} contentContainerStyle={styles.content} bounces={false}>
-        {/* Map Simulation Viewport */}
-        <TouchableOpacity style={styles.mapContainer} onPress={handleMapTap} activeOpacity={1}>
-          <RealMap interactive style={styles.mapImage}>
-            {/* Stylized Map Gradient Overlay */}
-            <LinearGradient
-              colors={['rgba(0,33,124,0.2)', 'transparent', 'rgba(220,217,217,0.4)']}
-              style={StyleSheet.absoluteFill}
-              pointerEvents="none"
-            />
-
-            {/* Route Polyline */}
-            <Svg style={StyleSheet.absoluteFill} width="100%" height="100%" viewBox="0 0 390 370" pointerEvents="none">
-              <Path
-                d="M 96 112 C 140 130, 160 190, 210 215 C 248 235, 278 210, 310 262"
-                opacity={0.45}
-                stroke="#809ffe"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={8}
-              />
-              <Path
-                d="M 96 112 C 140 130, 160 190, 210 215 C 248 235, 278 210, 310 262"
-                stroke="#0033b1"
-                strokeDasharray="6 3"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={4}
-              />
-              <Circle cx={96} cy={112} r={14} fill="#0033b1" fillOpacity={0.16} />
-              <Circle cx={96} cy={112} r={6} fill="#00217c" />
-              <Circle cx={96} cy={112} r={2.5} fill="#ffffff" />
-              <Circle cx={310} cy={262} r={12} fill="#C52A2E" fillOpacity={0.2} />
-              <Path
-                d="M 310 248 C 304.5 248 300 252.5 300 258 C 300 266 310 274 310 274 C 310 274 320 266 320 258 C 320 252.5 315.5 248 310 248 Z"
-                fill="#C52A2E"
-              />
-              <Circle cx={310} cy={257} r={3.5} fill="#ffffff" />
-            </Svg>
-
-            {/* Animated Live Driver Vehicle Marker */}
-            <Animated.View
-              style={[
-                styles.driverMarkerWrap,
-                { transform: [{ translateX: markerX }, { translateY: markerY }] },
-              ]}
-            >
-              <View style={styles.driverPulseRing} />
-              <View style={styles.driverHalo}>
-                <View style={styles.driverInner}>
-                  <MaterialIcon name={isCar ? "local-taxi" : "electric-rickshaw"} size={19} color={colors.onPrimary} />
-                </View>
-              </View>
-              <View style={styles.bearingBadge}>
-                <MaterialIcon name="navigation" size={10} color={colors.onPrimary} />
-              </View>
-            </Animated.View>
+        {/* Live Map Viewport — real Mapbox canvas driven by the command bridge */}
+        <View style={styles.mapContainer}>
+          <LiveMap
+            ref={mapRef}
+            interactive
+            style={styles.mapImage}
+            vehicle={driver}
+            follow={false}
+            route={route}
+            pins={pins}
+            onPress={handleMapTap}
+            onUserMove={() => setFollow(false)}
+            onError={(message) => console.warn('[LiveMap]', message)}
+          >
 
             {/* Floating Top Trip Status Banner */}
             <View style={styles.statusBanner}>
@@ -288,11 +358,11 @@ export default function ActiveRideScreen() {
             </View>
 
             {/* Live Map Re-center Button */}
-            <TouchableOpacity style={styles.recenterBtn} activeOpacity={0.7}>
+            <TouchableOpacity style={styles.recenterBtn} activeOpacity={0.7} onPress={recenter}>
               <MaterialIcon name="my-location" size={20} color={colors.onSurface} />
             </TouchableOpacity>
-          </RealMap>
-        </TouchableOpacity>
+          </LiveMap>
+        </View>
 
         {/* Bottom Sheet Live Tracking Drawer */}
         <View style={styles.bottomSheet}>
@@ -306,13 +376,15 @@ export default function ActiveRideScreen() {
                   <View style={styles.otpCardIcon}>
                     <MaterialIcon name="pin" size={18} color={colors.primary} />
                   </View>
-                  <Text style={styles.otpCardTitle}>Trip Start PIN</Text>
+                  <Text style={styles.otpCardTitle}>{ride?.type === 'parcel' ? 'Sender Pickup PIN' : 'Trip Start PIN'}</Text>
                 </View>
                 <Text style={styles.otpCardDigits}>{ride.otp.split('').join('  ')}</Text>
                 <Text style={styles.otpCardHint}>
-                  {ride?.status === 'arrived'
+                  {ride?.type === 'parcel' 
+                    ? (ride?.status === 'arrived' ? 'Your driver is here. Share this PIN to hand over the package.' : 'Share this PIN with your driver to hand over the package.')
+                    : (ride?.status === 'arrived'
                     ? 'Your driver is here at pickup. Share this PIN to start the trip.'
-                    : 'Share this PIN with your driver at pickup to start the trip.'}
+                    : 'Share this PIN with your driver at pickup to start the trip.')}
                 </Text>
               </View>
             ) : null}
@@ -449,7 +521,7 @@ export default function ActiveRideScreen() {
   );
 }
 
-const createStyles = (colors: any) => StyleSheet.create({
+const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,
@@ -482,7 +554,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: 'rgba(128, 159, 254, 0.4)',
+    backgroundColor: mapTheme.tintPanelTrack,
   },
   driverHalo: {
     width: 44,
@@ -534,7 +606,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     zIndex: 10,
   },
   statusInner: {
-    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    backgroundColor: mapTheme.glass,
     borderRadius: 16,
     padding: 12,
     flexDirection: 'row',
@@ -598,7 +670,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    backgroundColor: mapTheme.glass,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -884,7 +956,7 @@ const createStyles = (colors: any) => StyleSheet.create({
   },
   progressBarBg: {
     height: 6,
-    backgroundColor: 'rgba(217, 217, 217, 0.5)',
+    backgroundColor: colors.surfaceContainerHighest,
     borderRadius: 3,
     overflow: 'hidden',
   },

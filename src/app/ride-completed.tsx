@@ -6,6 +6,7 @@ import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts } from '../theme/typography';
+import { useAuth } from '../context/AuthContext';
 
 const API_BASE = 'http://192.168.1.34:4000';
 
@@ -92,18 +93,21 @@ export default function RideCompletedScreen() {
   const styles = createStyles(colors);
   const router = useRouter();
   const { rideId } = useLocalSearchParams<{ rideId: string }>();
+  const { token } = useAuth();
   const [ride, setRide] = useState<CompletedRide | null>(null);
   const [rating, setRating] = useState(5);
   const [activeCompliments, setActiveCompliments] = useState<string[]>(['Smooth Driving']);
   const [tip, setTip] = useState(0);
 
   useEffect(() => {
-    if (!rideId) return;
-    fetch(`${API_BASE}/api/rides/${rideId}`)
+    if (!rideId || !token) return;
+    fetch(`${API_BASE}/api/rides/${rideId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => setRide(data || null))
       .catch(() => setRide(null));
-  }, [rideId]);
+  }, [rideId, token]);
 
   const partner = ride?.partner;
   const firstName = partner?.name?.trim().split(/\s+/)[0] || 'your driver';

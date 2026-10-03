@@ -1,11 +1,66 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Animated, Easing, Image } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
-import { type } from '../theme/typography';
+import { type, fonts } from '../theme/typography';
+import { useAuth } from '../context/AuthContext';
+
+type RideData = {
+  id?: string;
+  type?: string;
+  status?: string;
+  price?: number;
+  pickup?: { address?: string; lat?: number; lng?: number } | null;
+  dropoff?: { address?: string; lat?: number; lng?: number } | null;
+  packageDetails?: {
+    category?: string;
+    weightTier?: string;
+    fragile?: boolean;
+    receiverName?: string;
+    receiverPhone?: string;
+    notes?: string;
+  } | null;
+  partner?: {
+    id?: string;
+    name?: string;
+    phone?: string;
+    vehicleType?: string;
+    vehicleNumber?: string;
+    vehicleModel?: string;
+    rating?: number | null;
+  } | null;
+  createdAt?: string;
+  acceptedAt?: string;
+  arrivedAt?: string;
+  startedAt?: string;
+  completedAt?: string;
+  distance?: number;
+  proofOfDeliveryPhotoUrl?: string | null;
+};
+
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+
+const fmtTime = (value?: string | number | null): string => {
+  if (value == null || value === '') return '';
+  const d = new Date(value);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+};
+
+const initialsOf = (name?: string | null): string => {
+  if (!name) return 'P';
+  return (
+    name
+      .trim()
+      .split(/\s+/)
+      .slice(0, 2)
+      .map((w) => (w[0] ? w[0].toUpperCase() : ''))
+      .join('') || 'P'
+  );
+};
 
 const COMPLIMENTS = ['✨ On-time delivery', '📦 Careful handling', '😊 Polite partner', '⚡ Fast route'];
 const TIP_OPTIONS = ['+₹10', '+₹20', '+₹30', 'Custom'];
@@ -14,11 +69,32 @@ export default function PackageDeliveredScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { token } = useAuth();
+  const { rideId } = useLocalSearchParams<{ rideId?: string }>();
+  const [ride, setRide] = useState<RideData | null>(null);
   const [rating, setRating] = useState(5);
   const [compliments, setCompliments] = useState<Set<string>>(new Set(['📦 Careful handling']));
   const [selectedTip, setSelectedTip] = useState('+₹20');
   const [submitState, setSubmitState] = useState<'idle' | 'saving' | 'done'>('idle');
   const [spin] = useState(() => new Animated.Value(0));
+
+  useEffect(() => {
+    if (!rideId || !token) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/rides/${rideId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled && data) setRide(data);
+      } catch (e) {
+        console.warn('Ride fetch failed', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [rideId, token]);
 
   useEffect(() => {
     if (submitState === 'saving') {
@@ -57,8 +133,22 @@ export default function PackageDeliveredScreen() {
     submitState === 'idle'
       ? 'Submit Feedback & Back to Home'
       : submitState === 'saving'
-      ? 'Saving feedback...'
-      : 'Thank you! Redirecting...';
+        ? 'Saving feedback...'
+        : 'Thank you! Redirecting...';
+
+  const orderRef = (ride?.id || rideId || '').slice(-6).toUpperCase();
+  const receiverName = ride?.packageDetails?.receiverName || 'Receiver';
+  const partnerName = ride?.partner?.name || 'Delivery partner';
+  const partnerMeta = [ride?.partner?.vehicleType, ride?.partner?.vehicleModel, ride?.partner?.vehicleNumber]
+    .filter(Boolean)
+    .join(' \u2022 ');
+
+  // Format total duration
+  let durationStr = '-- mins';
+  if (ride?.startedAt && ride?.completedAt) {
+    const mins = Math.round((new Date(ride.completedAt).getTime() - new Date(ride.startedAt).getTime()) / 60000);
+    durationStr = `${Math.max(1, mins)} mins total`;
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -79,10 +169,12 @@ export default function PackageDeliveredScreen() {
           </View>
           <View style={styles.orderPill}>
             <MaterialIcon name="local-shipping" size={14} color={colors.primary} />
-            <Text style={styles.orderPillText}>Order #EMX-88294</Text>
+            <Text style={styles.orderPillText}>Order #{orderRef || '\u2014'}</Text>
           </View>
           <Text style={styles.celebrationTitle}>Package Delivered!</Text>
-          <Text style={styles.celebrationSubtitle}>Today at 06:14 PM • Handed over securely</Text>
+          <Text style={styles.celebrationSubtitle}>
+            {ride?.completedAt ? `Today at ${fmtTime(ride.completedAt)} \u2022 Handed over securely` : 'Handed over securely'}
+          </Text>
         </View>
 
         {/* Proof of Delivery */}
@@ -99,15 +191,19 @@ export default function PackageDeliveredScreen() {
           </View>
           <View style={styles.proofBody}>
             <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1553413077-190dd305871c?w=200&h=200&fit=crop&q=80' }}
+              source={{
+                uri: ride?.proofOfDeliveryPhotoUrl
+                  ? `${API_BASE}${ride.proofOfDeliveryPhotoUrl}`
+                  : 'https://images.unsplash.com/photo-1553413077-190dd305871c?w=200&h=200&fit=crop&q=80',
+              }}
               style={styles.proofImage}
             />
             <View style={styles.proofInfo}>
-              <Text style={styles.proofTitle} numberOfLines={1}>Delivered to Priya Sharma</Text>
-              <Text style={styles.proofSub}>Location: Doorstep / Main Gate</Text>
+              <Text style={styles.proofTitle} numberOfLines={1}>Delivered to {receiverName}</Text>
+              <Text style={styles.proofSub} numberOfLines={1}>Location: {ride?.dropoff?.address || 'Dropoff location'}</Text>
               <View style={styles.proofCodeRow}>
                 <MaterialIcon name="check-circle" size={14} color={colors.primary} />
-                <Text style={styles.proofCodeText}>Contactless Code 4891 confirmed</Text>
+                <Text style={styles.proofCodeText}>Delivery verified successfully</Text>
               </View>
             </View>
           </View>
@@ -121,7 +217,7 @@ export default function PackageDeliveredScreen() {
               <Text style={styles.cardTitle}>Trip Summary</Text>
             </View>
             <View style={styles.durationPill}>
-              <Text style={styles.durationText}>32 mins total</Text>
+              <Text style={styles.durationText}>{durationStr}</Text>
             </View>
           </View>
 
@@ -131,8 +227,8 @@ export default function PackageDeliveredScreen() {
               <View style={styles.timelineDotPickup} />
               <View style={styles.timelineStopBody}>
                 <View style={styles.timelineStopTop}>
-                  <Text style={styles.timelineAddress} numberOfLines={1}>Greenways Road, RA Puram</Text>
-                  <Text style={styles.timelineTime}>05:42 PM</Text>
+                  <Text style={styles.timelineAddress} numberOfLines={1}>{ride?.pickup?.address || 'Pickup'}</Text>
+                  <Text style={styles.timelineTime}>{fmtTime(ride?.startedAt)}</Text>
                 </View>
                 <Text style={styles.timelineLabel}>Picked up from Sender</Text>
               </View>
@@ -141,8 +237,8 @@ export default function PackageDeliveredScreen() {
               <View style={styles.timelineDotDrop} />
               <View style={styles.timelineStopBody}>
                 <View style={styles.timelineStopTop}>
-                  <Text style={styles.timelineAddress} numberOfLines={1}>12th Cross St, Indiranagar</Text>
-                  <Text style={styles.timelineTime}>06:14 PM</Text>
+                  <Text style={styles.timelineAddress} numberOfLines={1}>{ride?.dropoff?.address || 'Dropoff'}</Text>
+                  <Text style={styles.timelineTime}>{fmtTime(ride?.completedAt)}</Text>
                 </View>
                 <Text style={styles.timelineLabel}>Delivered to recipient</Text>
               </View>
@@ -150,22 +246,23 @@ export default function PackageDeliveredScreen() {
           </View>
 
           <View style={styles.courierRow}>
-            <Image
-              source={{ uri: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&h=200&fit=crop&crop=faces&q=80' }}
-              style={styles.courierAvatar}
-            />
+            <View style={styles.courierAvatar}>
+              <Text style={styles.partnerAvatarText}>{initialsOf(ride?.partner?.name)}</Text>
+            </View>
             <View style={styles.courierInfo}>
               <View style={styles.courierNameRow}>
-                <Text style={styles.courierName} numberOfLines={1}>Suresh Kumar</Text>
-                <View style={styles.courierRatingRow}>
-                  <MaterialIcon name="star" size={13} color={colors.primary} />
-                  <Text style={styles.courierRating}>4.9</Text>
-                </View>
+                <Text style={styles.courierName} numberOfLines={1}>{partnerName}</Text>
+                {ride?.partner?.rating != null ? (
+                  <View style={styles.courierRatingRow}>
+                    <MaterialIcon name="star" size={13} color={colors.primary} />
+                    <Text style={styles.courierRating}>{Number(ride.partner.rating).toFixed(1)}</Text>
+                  </View>
+                ) : null}
               </View>
-              <Text style={styles.courierMeta} numberOfLines={1}>Two Wheeler • Hero Splendor (TN 07 BE 4102)</Text>
+              {partnerMeta ? <Text style={styles.courierMeta} numberOfLines={1}>{partnerMeta}</Text> : null}
             </View>
             <View style={styles.distancePill}>
-              <Text style={styles.distanceText}>6.2 km</Text>
+              <Text style={styles.distanceText}>{ride?.distance != null ? `${(ride.distance / 1000).toFixed(1)} km` : '\u2014'}</Text>
             </View>
           </View>
         </View>
@@ -185,12 +282,8 @@ export default function PackageDeliveredScreen() {
 
           <View style={styles.fareLines}>
             <View style={styles.fareLine}>
-              <Text style={styles.fareLabel}>Base Delivery Fare</Text>
-              <Text style={styles.fareValue}>₹40.00</Text>
-            </View>
-            <View style={styles.fareLine}>
-              <Text style={styles.fareLabel}>Distance Fare (6.2 km)</Text>
-              <Text style={styles.fareValue}>₹39.00</Text>
+              <Text style={styles.fareLabel}>Delivery Fare</Text>
+              <Text style={styles.fareValue}>₹{ride?.price != null ? Number(ride.price).toFixed(2) : '0.00'}</Text>
             </View>
             <View style={styles.fareLine}>
               <View style={styles.fareLabelRow}>
@@ -208,10 +301,10 @@ export default function PackageDeliveredScreen() {
               <Text style={styles.totalLabel}>Total Paid</Text>
               <View style={styles.totalMethodRow}>
                 <MaterialIcon name="check-circle" size={14} color={colors.primary} />
-                <Text style={styles.totalMethodText}>Paid via UPI • Amazon Pay</Text>
+                <Text style={styles.totalMethodText}>Paid successfully</Text>
               </View>
             </View>
-            <Text style={styles.totalValue}>₹79</Text>
+            <Text style={styles.totalValue}>₹{ride?.price != null ? Number(ride.price).toFixed(0) : '0'}</Text>
           </View>
         </View>
 
@@ -219,7 +312,7 @@ export default function PackageDeliveredScreen() {
         <View style={styles.card}>
           <View style={styles.ratingHeader}>
             <Text style={styles.ratingTitle}>How was your delivery?</Text>
-            <Text style={styles.ratingSubtitle}>Rate your experience with Suresh Kumar</Text>
+            <Text style={styles.ratingSubtitle}>Rate your experience with {partnerName}</Text>
           </View>
 
           <View style={styles.starsRow}>
@@ -523,7 +616,13 @@ const createStyles = (colors: any) => StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: colors.surfaceContainer,
+    backgroundColor: colors.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  partnerAvatarText: {
+    ...type.labelMd,
+    color: colors.onPrimary,
   },
   courierInfo: {
     flex: 1,

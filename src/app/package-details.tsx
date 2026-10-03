@@ -1,7 +1,7 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon, { MaterialIconName } from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
@@ -49,6 +49,7 @@ export default function PackageDeliveryScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const params = useLocalSearchParams();
   const [selectedCategory, setSelectedCategory] = useState('electronics');
   const [weightTier, setWeightTier] = useState('small');
   const [isFragile, setIsFragile] = useState(true);
@@ -56,8 +57,8 @@ export default function PackageDeliveryScreen() {
   const [recipientName, setRecipientName] = useState('Priya Sharma');
   const [recipientPhone, setRecipientPhone] = useState('+91 98765 43210');
   const [smsTracking, setSmsTracking] = useState(true);
-  const [pickup, setPickup] = useState('Greenways Road, RA Puram');
-  const [dropoff, setDropoff] = useState('12th Cross St, Indiranagar');
+  const [pickup, setPickup] = useState(params.pickup as string || 'Greenways Road, RA Puram');
+  const [dropoff, setDropoff] = useState(params.destination as string || '12th Cross St, Indiranagar');
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -330,7 +331,21 @@ export default function PackageDeliveryScreen() {
           </View>
           <TouchableOpacity
             style={styles.selectVehicleBtn}
-            onPress={() => router.push('/package-vehicle')}
+            onPress={() => router.push({
+              pathname: '/package-vehicle',
+              params: {
+                ...params,
+                pickup,
+                dropoff,
+                selectedCategory,
+                weightTier,
+                isFragile: String(isFragile),
+                declaredValue,
+                recipientName,
+                recipientPhone,
+                smsTracking: String(smsTracking)
+              }
+            })}
             activeOpacity={0.95}
           >
             <Text style={styles.selectVehicleText}>Select Vehicle</Text>
