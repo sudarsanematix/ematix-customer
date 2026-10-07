@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "ematix-delivery-app",
-    "slug": "ematix-delivery-app",
+    "name": "Ematix Go Rides",
+    "slug": "ematix-go-rides",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -19,7 +19,7 @@
       },
       "predictiveBackGestureEnabled": false,
       "softwareKeyboardLayoutMode": "resize",
-      "package": "com.sudarsanematix.ematixdeliveryapp",
+      "package": "com.sudarsanematix.ematixgorides",
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",

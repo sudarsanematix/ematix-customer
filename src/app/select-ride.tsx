@@ -24,10 +24,40 @@ import SwipeButton from '../components/SwipeButton';
 import { socketService } from '../utils/socket';
 import { useAuth } from '../context/AuthContext';
 
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+
+const calculateFare = (distKm: number, type: string, serverConfigs: any) => {
+  if (!distKm) return 0;
+  const backendType = type;
+
+  const config = serverConfigs && serverConfigs[backendType] ? serverConfigs[backendType] : null;
+  
+  if (!config) {
+    const c = (backendType === 'auto' ? { base: 45, perKm: 12, min: 60 } : { base: 25, perKm: 7, min: 30 });
+    return Math.max(Math.round(c.base + (distKm * c.perKm)), c.min);
+  }
+
+  const distance = Math.max(0, distKm);
+  const base = config.baseFare || 0;
+  const billable = Math.max(0, distance - (config.baseDistanceKm || 0));
+  
+  const tier2Thresh = config.tier2DistanceThresholdKm || 999999;
+  const baseDist = config.baseDistanceKm || 0;
+  
+  const tier1Span = Math.max(0, Math.min(billable, tier2Thresh - baseDist));
+  const tier2Span = Math.max(0, billable - tier1Span);
+  
+  const tier1 = tier1Span * (config.perKmRate || 0);
+  const tier2 = tier2Span * (config.tier2PerKmRate || 0);
+  
+  const total = base + tier1 + tier2;
+  return Math.max(Math.round(total), config.minFare || 0);
+};
+
 const RIDE_OPTIONS = [
   {
     id: 'car',
-    name: 'Prime Sedan - XYZ123',
+    name: 'Economic Car',
     rating: 4.8,
     image: require('../../assets/images/car.png'),
     distance: '20km',
@@ -36,8 +66,18 @@ const RIDE_OPTIONS = [
     price: '₹65',
   },
   {
+    id: 'premium_car',
+    name: 'Premium Taxi',
+    rating: 4.9,
+    image: require('../../assets/images/premium_car.png'),
+    distance: '20km',
+    time: '45mins',
+    promo: 'Not Applied',
+    price: '₹100',
+  },
+  {
     id: 'auto',
-    name: 'Ematix Auto - ABC789',
+    name: 'Ematix Auto',
     rating: 4.5,
     image: require('../../assets/images/auto.png'),
     distance: '20km',
@@ -128,6 +168,18 @@ export default function SelectRideScreen() {
   const dLng = dropoffLng ? parseFloat(dropoffLng as string) : 80.2450;
 
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([[pLng, pLat], [dLng, dLat]]);
+  const [fareConfigs, setFareConfigs] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/fares`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.fares) {
+          setFareConfigs(data.fares);
+        }
+      })
+      .catch(err => console.error('Failed to fetch fares', err));
+  }, []);
 
   const parsedDistance = distance ? parseFloat(distance as string) : null;
   const parsedDuration = duration ? parseFloat(duration as string) : null;
@@ -135,13 +187,17 @@ export default function SelectRideScreen() {
   const timeMins = parsedDuration ? Math.ceil(parsedDuration / 60) + 'mins' : '45mins';
 
   // Base calculation for dynamic prices
-  // Car: 40 base + 12/km, Auto: 20 base + 8/km
-  const carPrice = parsedDistance ? Math.round(40 + (parsedDistance / 1000) * 12) : 65;
-  const autoPrice = parsedDistance ? Math.round(20 + (parsedDistance / 1000) * 8) : 35;
+  const distKmVal = parsedDistance ? (parsedDistance / 1000) : 20;
+  
+  const carPrice = calculateFare(distKmVal, 'car', fareConfigs);
+  const premiumCarPrice = calculateFare(distKmVal, 'premium_car', fareConfigs);
+  const autoPrice = calculateFare(distKmVal, 'auto', fareConfigs);
 
   const dynamicRideOptions = RIDE_OPTIONS.map(ride => {
     if (ride.id === 'car') {
       return { ...ride, distance: distKm, time: timeMins, price: '₹' + carPrice };
+    } else if (ride.id === 'premium_car') {
+      return { ...ride, distance: distKm, time: timeMins, price: '₹' + premiumCarPrice };
     } else if (ride.id === 'auto') {
       return { ...ride, distance: distKm, time: timeMins, price: '₹' + autoPrice };
     }

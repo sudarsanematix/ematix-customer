@@ -9,7 +9,7 @@ export type MapRegion = {
   longitudeDelta: number;
 };
 
-export type LiveVehicleKind = 'bike' | 'auto' | 'mini_truck' | 'prime_sedan';
+export type LiveVehicleKind = 'bike' | 'auto' | 'car' | 'premium_car';
 
 export type LiveVehicle = {
   lngLat: LngLat;
@@ -65,15 +65,15 @@ export const LIVE_MAP_STYLE = LIVE_MAP_LIGHT_STYLE;
 export const VEHICLE_COLORS_DARK: Record<LiveVehicleKind, string> = {
   bike: '#38bdf8',
   auto: '#fbbf24',
-  mini_truck: '#a78bfa',
-  prime_sedan: '#e2e8f0',
+  car: '#e2e8f0',
+  premium_car: '#cbd5e1',
 };
 
 export const VEHICLE_COLORS_LIGHT: Record<LiveVehicleKind, string> = {
   bike: '#0ea5e9',
   auto: '#f59e0b',
-  mini_truck: '#7c3aed',
-  prime_sedan: '#1e293b',
+  car: '#1e293b',
+  premium_car: '#0f172a',
 };
 
 export const VEHICLE_COLORS = VEHICLE_COLORS_LIGHT;

@@ -29,6 +29,14 @@ class SocketService {
       this.socket.disconnect();
       this.socket = null;
       if (token) this.connect();
+    } else if (
+      token &&
+      (this.pendingHandlers.length > 0 || this.pendingEmits.length > 0)
+    ) {
+      // A screen asked for the socket before the token was restored (child
+      // effects run before AuthProvider's). Without this, the queued listeners
+      // and emits would sit forever and e.g. the home radar stays empty.
+      this.connect();
     }
   }
 

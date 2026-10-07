@@ -408,8 +408,8 @@ export default function PackageTransitScreen() {
     const url = Linking.createURL('/package-transit', { queryParams: { rideId } });
     try {
       const result = await Share.share({
-        message: `Track my Ematix delivery${orderRef ? ` (Order #${orderRef})` : ''}: ${url}`,
-        title: 'Ematix Live Tracking',
+        message: `Track my Ematix Go delivery${orderRef ? ` (Order #${orderRef})` : ''}: ${url}`,
+        title: 'Ematix Go Live Tracking',
       });
       if (result.action === Share.sharedAction) {
         setShareCopied(true);

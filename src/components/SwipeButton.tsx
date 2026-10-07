@@ -21,6 +21,12 @@ export default function SwipeButton({ onSwipeComplete, title = 'Slide To Send Re
   const styles = createStyles(colors);
 
   const [containerWidth, setContainerWidth] = useState(0);
+  const onSwipeCompleteRef = useRef(onSwipeComplete);
+  
+  React.useEffect(() => {
+    onSwipeCompleteRef.current = onSwipeComplete;
+  }, [onSwipeComplete]);
+
   const pan = useRef(new Animated.ValueXY()).current;
   const thumbWidth = 56;
   const padding = 6;
@@ -51,7 +57,7 @@ export default function SwipeButton({ onSwipeComplete, title = 'Slide To Send Re
             useNativeDriver: false,
             bounciness: 0,
           }).start(() => {
-            onSwipeComplete();
+            onSwipeCompleteRef.current();
           });
         } else {
           // Snap back

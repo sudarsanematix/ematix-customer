@@ -58,7 +58,6 @@ export default function ActiveRideScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { rideId, vehicle } = useLocalSearchParams<{ rideId: string, vehicle?: string }>();
-  const isCar = vehicle === 'car';
   const [ride, setRide] = useState<RideData | null>(null);
   const [unavailable, setUnavailable] = useState(false);
   const [hasUnread, setHasUnread] = useState(false);
@@ -73,7 +72,14 @@ export default function ActiveRideScreen() {
   const scale = pulse.interpolate({ inputRange: [0, 1], outputRange: [1, 1.6] });
   const ringOpacity = pulse.interpolate({ inputRange: [0, 0.5, 1], outputRange: [0, 0.6, 0] });
 
-  const vehicleKind: LiveVehicleKind = isCar ? 'prime_sedan' : 'auto';
+  const getVehicleKind = (v: string | undefined): LiveVehicleKind => {
+    if (!v) return 'bike';
+    const lower = v.toLowerCase();
+    if (lower === 'car' || lower.includes('car') || lower.includes('premium') || lower.includes('taxi') || lower.includes('sedan')) return 'car';
+    if (lower === 'auto' || lower.includes('auto')) return 'auto';
+    return 'bike';
+  };
+  const vehicleKind: LiveVehicleKind = getVehicleKind(vehicle || ride?.vehicleType);
 
   const getLocCoords = (loc: any) => {
     if (!loc) return null;
@@ -283,7 +289,7 @@ export default function ActiveRideScreen() {
   const pins: LivePin[] = useMemo(() => {
     const arr: LivePin[] = [];
     if (pickupCoords && ride?.status !== 'en_route_dropoff' && ride?.status !== 'completed') {
-      arr.push({ id: 'pickup', lngLat: pickupCoords, color: mapTheme.routeDone, variant: 'dot' });
+      arr.push({ id: 'pickup', lngLat: pickupCoords, color: '#4285F4', variant: 'dot' });
     }
     if (dropoffCoords) {
       arr.push({ id: 'dropoff', lngLat: dropoffCoords, color: mapTheme.success, variant: 'end' });
@@ -345,7 +351,7 @@ export default function ActiveRideScreen() {
                       <Text style={styles.arrivingText} numberOfLines={1}>{statusLabel}</Text>
                     </View>
                     <Text style={styles.distanceText} numberOfLines={1}>
-                      {ride?.partner?.name ? `${ride.partner.name} · ${ride.partner.vehicleModel || (isCar ? 'Prime Sedan' : 'Ematix Auto')}` : 'Connecting to your partner'}
+                      {ride?.partner?.name ? `${ride.partner.name} · ${ride.partner.vehicleModel || (vehicleKind === 'car' ? 'Economic Car' : 'Ematix Auto')}` : 'Connecting to your partner'}
                     </Text>
                   </View>
                 </View>
@@ -412,7 +418,7 @@ export default function ActiveRideScreen() {
               {ride?.partner?.vehicleNumber || ride?.partner?.vehicleModel ? (
                 <View style={styles.vehicleMeta}>
                   <Text style={styles.plateText}>{ride?.partner?.vehicleNumber || '—'}</Text>
-                  <Text style={styles.modelText}>{ride?.partner?.vehicleModel || (isCar ? 'Prime Sedan' : 'Ematix Auto')}</Text>
+                  <Text style={styles.modelText}>{ride?.partner?.vehicleModel || (vehicleKind === 'car' ? 'Economic Car' : 'Ematix Auto')}</Text>
                 </View>
               ) : null}
             </View>

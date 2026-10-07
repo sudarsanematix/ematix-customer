@@ -157,58 +157,6 @@ export const DRIVER_SURESH = {
 
 export const COURIER_SURESH = DRIVER_SURESH;
 
-export const INITIAL_ORDERS = [
-  {
-    id: 'EM-89240',
-    type: 'delivery',
-    title: 'Electronics & Document Package',
-    pickup: 'Greenways Road, RA Puram',
-    dropoff: '12th Cross St, Indiranagar',
-    date: 'Today, 06:14 PM',
-    time: '06:14 PM',
-    status: 'Completed',
-    price: 79,
-    partnerName: 'Suresh Kumar',
-    vehicle: 'Honda Activa 6G',
-    rating: 5,
-    paymentMethod: 'UPI • GPay',
-    fare: { base: 40, distance: 39, surcharge: 0, coupon: null, couponValue: 0, tip: 0 },
-  },
-  {
-    id: 'EMX-88294',
-    type: 'ride',
-    title: 'City Auto Ride',
-    pickup: 'Anna Salai, Mount Road',
-    dropoff: 'Marina Bay Promenade',
-    date: 'Today, 05:42 PM',
-    time: '05:42 PM',
-    status: 'Completed',
-    price: 130,
-    partnerName: 'Karthik Raja',
-    vehicle: 'Bajaj Compact Auto',
-    rating: 5,
-    paymentMethod: 'Google Pay UPI',
-    fare: { base: 60, distance: 70, surcharge: 25, coupon: 'EMATIX50', couponValue: 25, tip: 0 },
-  },
-  {
-    id: 'EM-77210',
-    type: 'ride',
-    title: 'Office Commute',
-    pickup: '12A Lake View Rd, Nungambakkam',
-    dropoff: 'Ramanujan IT City, Taramani',
-    date: 'Yesterday, 09:15 AM',
-    time: '09:15 AM',
-    status: 'Completed',
-    price: 210,
-    partnerName: 'Venkatesh R.',
-    vehicle: 'Maruti WagonR AC',
-    rating: 4.8,
-    paymentMethod: 'Paytm UPI',
-    fare: { base: 90, distance: 120, surcharge: 0, coupon: null, couponValue: 0, tip: 0 },
-  },
-];
-
-export const PAST_ORDERS = INITIAL_ORDERS;
 
 export const NOTIFICATIONS = [
   {
@@ -231,7 +179,7 @@ export const NOTIFICATIONS = [
     id: 'n3',
     type: 'offer',
     title: '40% off your next Auto ride',
-    message: 'Flat 40% off (up to ₹40) on city Auto rides this weekend. Use code WKND40.',
+    message: 'Flat 40% off (up to â‚¹40) on city Auto rides this weekend. Use code WKND40.',
     time: 'Today, 10:00 AM',
     read: false,
   },

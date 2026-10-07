@@ -8,6 +8,7 @@ import {
   ScrollView,
   Modal,
   Animated,
+  Easing,
   BackHandler,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -109,8 +110,8 @@ export default function FindingDriverScreen() {
   const { rideId, vehicle, pickup, dropoff, pLat, pLng, price } = useLocalSearchParams<{ rideId?: string, vehicle?: string, pickup?: string, dropoff?: string, pLat?: string, pLng?: string, price?: string }>();
   const isCar = vehicle === 'car';
 
-  const pLatNum = pLat ? parseFloat(pLat) : null;
-  const pLngNum = pLng ? parseFloat(pLng) : null;
+  const pLatNum = pLat ? parseFloat(pLat) : 13.0316; // CHENNAI_REGION fallback
+  const pLngNum = pLng ? parseFloat(pLng) : 80.2341;
 
   const displayPrice = price ? (String(price).startsWith('₹') ? price : `₹${price}`) : '';
 
@@ -120,6 +121,19 @@ export default function FindingDriverScreen() {
   const [showTimeoutModal, setShowTimeoutModal] = useState(false);
   const [tipAdded, setTipAdded] = useState(false);
   const modalRef = useRef(false);
+
+  const spinAnim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.timing(spinAnim, {
+        toValue: 1,
+        duration: 1500,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
+    ).start();
+  }, [spinAnim]);
 
   useEffect(() => {
     if (timer === 120 && !tipAdded) {
@@ -196,7 +210,7 @@ export default function FindingDriverScreen() {
             <View style={styles.beaconContainer} pointerEvents="none">
               <View style={styles.beaconPill}>
                 <View style={styles.beaconDotWrap}>
-                  <View style={styles.beaconPing} />
+                  <PingRing size={24} duration={1500} delay={0} color={colors.accentRed} />
                   <View style={styles.beaconDot} />
                 </View>
                 <Text style={styles.beaconText}>Connecting to nearby drivers</Text>
@@ -218,7 +232,7 @@ export default function FindingDriverScreen() {
 
           <View style={styles.sheetHeader}>
             <View style={styles.titleRow}>
-              <Animated.View style={styles.syncSpin}>
+              <Animated.View style={[styles.syncSpin, { transform: [{ rotate: spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>
                 <MaterialIcon name="sync" size={22} color={colors.primary} />
               </Animated.View>
               <Text style={styles.sheetTitle}>Finding {isCar ? 'a Car' : 'an Auto'} near you...</Text>
@@ -229,7 +243,10 @@ export default function FindingDriverScreen() {
           <View style={styles.progressContainer}>
             <View style={styles.progressHeader}>
               <View style={styles.progressLeft}>
-                <View style={styles.progressPulseDot} />
+                <View style={{ width: 8, height: 8, justifyContent: 'center', alignItems: 'center' }}>
+                  <PingRing size={20} duration={1500} delay={0} color={colors.accentRed} />
+                  <View style={styles.progressPulseDot} />
+                </View>
                 <Text style={styles.progressText}>Contacting 4 nearby {isCar ? 'cars' : 'autos'}...</Text>
               </View>
               <Text style={styles.timerText}>{formatTime(timer)}</Text>
@@ -247,7 +264,7 @@ export default function FindingDriverScreen() {
                 </View>
                 <View>
                   <View style={styles.vehicleTitleRow}>
-                    <Text style={styles.vehicleTitle}>{isCar ? 'Prime Sedan' : 'Ematix Auto'}</Text>
+                    <Text style={styles.vehicleTitle}>{isCar ? 'Economic Car' : 'Ematix Auto'}</Text>
                     <View style={styles.ecoBadge}>
                       <Text style={styles.ecoBadgeText}>Eco</Text>
                     </View>

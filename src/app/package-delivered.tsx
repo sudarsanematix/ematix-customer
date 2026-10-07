@@ -7,6 +7,7 @@ import MaterialIcon from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
 import { type, fonts } from '../theme/typography';
 import { useAuth } from '../context/AuthContext';
+import { authedFetch } from '../utils/api';
 
 type RideData = {
   id?: string;
@@ -72,7 +73,9 @@ export default function PackageDeliveredScreen() {
   const { token } = useAuth();
   const { rideId } = useLocalSearchParams<{ rideId?: string }>();
   const [ride, setRide] = useState<RideData | null>(null);
-  const [rating, setRating] = useState(5);
+  // Starts null, not 5 -- a tap-through used to record a perfect score.
+  const [rating, setRating] = useState<number | null>(null);
+  const [ratingError, setRatingError] = useState<string | null>(null);
   const [compliments, setCompliments] = useState<Set<string>>(new Set(['📦 Careful handling']));
   const [selectedTip, setSelectedTip] = useState('+₹20');
   const [submitState, setSubmitState] = useState<'idle' | 'saving' | 'done'>('idle');
@@ -120,13 +123,30 @@ export default function PackageDeliveredScreen() {
     });
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (submitState !== 'idle') return;
     setSubmitState('saving');
-    setTimeout(() => {
-      setSubmitState('done');
-      setTimeout(() => router.replace('/(tabs)/home'), 1100);
-    }, 1300);
+
+    const rid = ride?.id || rideId;
+    // Persist the rating so the partner's average reflects this trip. Skipping
+    // the stars is allowed and records nothing.
+    if (rid && token && rating !== null) {
+      try {
+        await authedFetch(`/api/profile/rides/${rid}/rating`, token, {
+          method: 'POST',
+          body: { rating },
+        });
+      } catch (e: any) {
+        // Do not advance to the success state: the customer stays on the
+        // receipt so the rating can be retried, and Orders also exposes it.
+        setRatingError(e?.message || 'Could not save your rating. Tap submit to retry.');
+        setSubmitState('idle');
+        return;
+      }
+    }
+
+    setSubmitState('done');
+    setTimeout(() => router.replace('/(tabs)/home'), 1100);
   };
 
   const submitLabel =
@@ -319,13 +339,18 @@ export default function PackageDeliveredScreen() {
             {[1, 2, 3, 4, 5].map((value) => (
               <TouchableOpacity key={value} onPress={() => setRating(value)} activeOpacity={0.7}>
                 <MaterialIcon
-                  name={value <= rating ? 'star' : 'star-border'}
+                  name={(rating ?? 0) >= value ? 'star' : 'star-border'}
                   size={36}
-                  color={value <= rating ? colors.primary : colors.borderGray}
+                  color={(rating ?? 0) >= value ? colors.primary : colors.borderGray}
                 />
               </TouchableOpacity>
             ))}
           </View>
+
+          {rating === null ? (
+            <Text style={styles.ratingSkipHint}>Tap a star to rate (optional)</Text>
+          ) : null}
+          {ratingError ? <Text style={styles.ratingErrorText}>{ratingError}</Text> : null}
 
           <View style={styles.complimentsBlock}>
             <Text style={styles.sectionLabel}>What went great?</Text>
@@ -745,6 +770,20 @@ const createStyles = (colors: any) => StyleSheet.create({
     justifyContent: 'center',
     gap: 8,
     paddingVertical: 2,
+  },
+  ratingSkipHint: {
+    textAlign: 'center',
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: colors.textMuted,
+    marginTop: 6,
+  },
+  ratingErrorText: {
+    textAlign: 'center',
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    color: '#B91C1C',
+    marginTop: 6,
   },
   complimentsBlock: {
     alignItems: 'center',

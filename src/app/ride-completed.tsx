@@ -7,6 +7,7 @@ import MaterialIcon from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts } from '../theme/typography';
 import { useAuth } from '../context/AuthContext';
+import { authedFetch } from '../utils/api';
 
 const API_BASE = 'http://192.168.1.34:4000';
 
@@ -95,7 +96,12 @@ export default function RideCompletedScreen() {
   const { rideId } = useLocalSearchParams<{ rideId: string }>();
   const { token } = useAuth();
   const [ride, setRide] = useState<CompletedRide | null>(null);
-  const [rating, setRating] = useState(5);
+  // Starts null, not 5. The previous default stored a perfect score for every
+  // customer who tapped Done without touching the stars.
+  const [rating, setRating] = useState<number | null>(null);
+  const [ratingSubmitted, setRatingSubmitted] = useState(false);
+  const [ratingError, setRatingError] = useState<string | null>(null);
+  const [ratingSaving, setRatingSaving] = useState(false);
   const [activeCompliments, setActiveCompliments] = useState<string[]>(['Smooth Driving']);
   const [tip, setTip] = useState(0);
 
@@ -260,7 +266,7 @@ export default function RideCompletedScreen() {
           <View style={styles.starContainer}>
             {[1, 2, 3, 4, 5].map((star) => (
               <TouchableOpacity key={star} onPress={() => setRating(star)} activeOpacity={0.8}>
-                {rating >= star ? (
+                {(rating ?? 0) >= star ? (
                   <Text style={styles.starBigActive}>★</Text>
                 ) : (
                   <Text style={styles.starBigInactive}>★</Text>
@@ -268,7 +274,11 @@ export default function RideCompletedScreen() {
               </TouchableOpacity>
             ))}
           </View>
-          <Text style={styles.ratingStatusText}>{RATING_PHRASES[rating - 1]}</Text>
+          <Text style={styles.ratingStatusText}>
+            {rating === null ? 'Tap a star to rate your trip (optional)' : RATING_PHRASES[rating - 1]}
+          </Text>
+
+          {ratingError ? <Text style={styles.ratingErrorText}>{ratingError}</Text> : null}
 
           <View style={styles.complimentsSection}>
             <Text style={styles.sectionLabel}>Give a compliment</Text>
@@ -342,8 +352,41 @@ export default function RideCompletedScreen() {
 
       {/* CTA Footer */}
       <View style={styles.footer}>
-        <TouchableOpacity style={styles.doneBtn} onPress={() => router.replace('/(tabs)/home')} activeOpacity={0.95}>
-          <Text style={styles.doneBtnText}>Done & Back to Home</Text>
+        <TouchableOpacity
+          style={[styles.doneBtn, ratingSaving && { opacity: 0.7 }]}
+          disabled={ratingSaving}
+          onPress={async () => {
+            // Skipping the stars is a valid choice and records nothing.
+            // Previously this silently stored a 5.
+            if (rating === null) {
+              router.replace('/(tabs)/home');
+              return;
+            }
+
+            if (rideId && token && !ratingSubmitted) {
+              setRatingSaving(true);
+              setRatingError(null);
+              try {
+                await authedFetch(`/api/profile/rides/${rideId}/rating`, token, {
+                  method: 'POST',
+                  body: { rating },
+                });
+                setRatingSubmitted(true);
+              } catch (e: any) {
+                // Stay on the screen so the rating is not lost. The customer can
+                // tap Done again, and Orders exposes a retry via /rate.
+                setRatingError(e?.message || 'Could not save your rating. Tap Done to retry.');
+              } finally {
+                setRatingSaving(false);
+              }
+            }
+            router.replace('/(tabs)/home');
+          }}
+          activeOpacity={0.95}
+        >
+          <Text style={styles.doneBtnText}>
+            {ratingSaving ? 'Saving rating…' : 'Done & Back to Home'}
+          </Text>
           <MaterialIcon name="arrow-forward" size={20} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
@@ -747,6 +790,14 @@ const createStyles = (colors: any) => StyleSheet.create({
     lineHeight: 18,
     color: colors.primary,
     marginTop: -4,
+  },
+  ratingErrorText: {
+    textAlign: 'center',
+    fontFamily: fonts.medium,
+    fontSize: 12,
+    lineHeight: 17,
+    color: '#B91C1C',
+    marginTop: 6,
   },
   complimentsSection: {
     marginTop: 16,

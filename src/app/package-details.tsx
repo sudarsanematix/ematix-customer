@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import SharedHeader from '../components/SharedHeader';
@@ -45,6 +45,26 @@ const SIZE_TIERS = [
   },
 ];
 
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+
+const calculateParcelFare = (dist: number, type: string, weight: string, serverConfigs: any) => {
+  const typeMap: Record<string, string> = {
+    'two-wheeler': 'parcel_bike',
+    'auto': 'parcel_auto'
+  };
+  const backendType = typeMap[type] || 'parcel_bike';
+
+  const c = serverConfigs && serverConfigs[backendType]
+    ? { base: serverConfigs[backendType].baseFare, perKm: serverConfigs[backendType].perKmRate, min: serverConfigs[backendType].minFare }
+    : (type === 'auto' ? { base: 45, perKm: 12, min: 60 } : { base: 25, perKm: 7, min: 30 }); // fallback
+
+  let weightSurge = 0;
+  if (weight === 'medium') weightSurge = 10;
+  if (weight === 'large') weightSurge = 20;
+  const fare = c.base + (dist * c.perKm) + weightSurge;
+  return Math.max(Math.round(fare), c.min);
+};
+
 export default function PackageDeliveryScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -59,6 +79,21 @@ export default function PackageDeliveryScreen() {
   const [smsTracking, setSmsTracking] = useState(true);
   const [pickup, setPickup] = useState(params.pickup as string || 'Greenways Road, RA Puram');
   const [dropoff, setDropoff] = useState(params.destination as string || '12th Cross St, Indiranagar');
+  const distanceKm = parseFloat(params.distance as string) / 1000 || 6.2;
+  const [fareConfigs, setFareConfigs] = useState<any>(null);
+
+  useEffect(() => {
+    fetch(`${API_BASE}/api/fares`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.fares) {
+          setFareConfigs(data.fares);
+        }
+      })
+      .catch(err => console.error('Failed to fetch fares', err));
+  }, []);
+
+  const startingFare = calculateParcelFare(distanceKm, 'two-wheeler', weightTier, fareConfigs);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -325,8 +360,7 @@ export default function PackageDeliveryScreen() {
           <View style={styles.priceCol}>
             <Text style={styles.priceLabel}>Starting Fare</Text>
             <View style={styles.priceRow}>
-              <Text style={styles.priceValue}>₹79</Text>
-              <Text style={styles.priceOriginal}>₹110</Text>
+              <Text style={styles.priceValue}>₹{startingFare}</Text>
             </View>
           </View>
           <TouchableOpacity

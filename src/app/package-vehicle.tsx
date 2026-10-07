@@ -15,12 +15,19 @@ import RealMap from '../components/RealMap';
 
 const INSTRUCTION_CHIPS = ['+ Ring bell twice', '+ Leave at gate', '+ Call receiver'];
 
-const calculateParcelFare = (dist: number, type: string, weight: string) => {
-  const configs: any = {
-    'two-wheeler': { base: 25, perKm: 7, min: 30 },
-    'auto': { base: 45, perKm: 12, min: 60 }
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+
+const calculateParcelFare = (dist: number, type: string, weight: string, serverConfigs: any) => {
+  const typeMap: Record<string, string> = {
+    'two-wheeler': 'bike',
+    'auto': 'auto'
   };
-  const c = configs[type] || configs['two-wheeler'];
+  const backendType = typeMap[type] || 'bike';
+
+  const c = serverConfigs && serverConfigs[backendType]
+    ? { base: serverConfigs[backendType].baseFare, perKm: serverConfigs[backendType].perKmRate, min: serverConfigs[backendType].minFare }
+    : (type === 'auto' ? { base: 45, perKm: 12, min: 60 } : { base: 25, perKm: 7, min: 30 }); // fallback
+
   let weightSurge = 0;
   if (weight === 'medium') weightSurge = 10;
   if (weight === 'large') weightSurge = 20;
@@ -53,12 +60,24 @@ export default function PackageVehicleScreen() {
 
   const [selectedVehicleId, setSelectedVehicleId] = useState('two-wheeler');
   const [notes, setNotes] = useState('');
+  const [fareConfigs, setFareConfigs] = useState<any>(null);
   const pendingRideRef = useRef<((data: any) => void) | null>(null);
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
 
+  useEffect(() => {
+    fetch(`${API_BASE}/api/fares`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.fares) {
+          setFareConfigs(data.fares);
+        }
+      })
+      .catch(err => console.error('Failed to fetch fares', err));
+  }, []);
+
   const dynamicVehicles = PARCEL_VEHICLES.map((v: any) => ({
     ...v,
-    price: calculateParcelFare(distanceKm, v.id, weightTier),
+    price: calculateParcelFare(distanceKm, v.id, weightTier, fareConfigs),
     eta: durationMins + ' mins',
     distance: distanceKm.toFixed(1) + ' km'
   }));

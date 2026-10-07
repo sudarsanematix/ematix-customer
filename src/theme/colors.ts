@@ -54,14 +54,14 @@ export const lightColors = {
 };
 
 export const darkColors = {
-  surfaceContainerLowest: '#0b0b12',
-  surface: '#12121a',
-  background: '#12121a',
-  surfaceGray: '#1a1a24',
-  surfaceContainerLow: '#16161f',
-  surfaceContainer: '#1d1d29',
-  surfaceContainerHigh: '#252533',
-  surfaceContainerHighest: '#2c2c3d',
+  surfaceContainerLowest: '#050a1a',
+  surface: '#0a1024',
+  background: '#0a1024',
+  surfaceGray: '#0d152d',
+  surfaceContainerLow: '#0f1731',
+  surfaceContainer: '#141d3b',
+  surfaceContainerHigh: '#1b2547',
+  surfaceContainerHighest: '#222f56',
   surfaceDim: '#0f0f16',
   surfaceBright: '#343446',
   surfaceTint: '#b8c4ff',

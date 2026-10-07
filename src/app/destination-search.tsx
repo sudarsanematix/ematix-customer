@@ -39,6 +39,44 @@ const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon
   return R * c;
 };
 
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+
+const calculateFare = (distKm: number, type: string, serverConfigs: any) => {
+  if (!distKm) return 0;
+  const typeMap: Record<string, string> = {
+    'ride': 'car',
+    'parcel': 'parcel_bike',
+    'two-wheeler': 'bike',
+    'auto': 'auto',
+    'prime-sedan': 'car',
+    'premium-car': 'premium_car'
+  };
+  const backendType = typeMap[type] || type;
+
+  const config = serverConfigs && serverConfigs[backendType] ? serverConfigs[backendType] : null;
+  
+  if (!config) {
+    const c = (backendType === 'auto' ? { base: 45, perKm: 12, min: 60 } : { base: 25, perKm: 7, min: 30 });
+    return Math.max(Math.round(c.base + (distKm * c.perKm)), c.min);
+  }
+
+  const distance = Math.max(0, distKm);
+  const base = config.baseFare || 0;
+  const billable = Math.max(0, distance - (config.baseDistanceKm || 0));
+  
+  const tier2Thresh = config.tier2DistanceThresholdKm || 999999;
+  const baseDist = config.baseDistanceKm || 0;
+  
+  const tier1Span = Math.max(0, Math.min(billable, tier2Thresh - baseDist));
+  const tier2Span = Math.max(0, billable - tier1Span);
+  
+  const tier1 = tier1Span * (config.perKmRate || 0);
+  const tier2 = tier2Span * (config.tier2PerKmRate || 0);
+  
+  const total = base + tier1 + tier2;
+  return Math.max(Math.round(total), config.minFare || 0);
+};
+
 export default function DestinationSearchScreen() {
   const { colors, isDark } = useTheme();
   const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
@@ -60,8 +98,20 @@ export default function DestinationSearchScreen() {
   const [isMapPicking, setIsMapPicking] = useState(false);
   const [mapCenterCoords, setMapCenterCoords] = useState<{ latitude: number, longitude: number } | null>(null);
   const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [fareConfigs, setFareConfigs] = useState<any>(null);
 
   const { user } = useAuth();
+
+  React.useEffect(() => {
+    fetch(`${API_BASE}/api/fares`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.success && data.fares) {
+          setFareConfigs(data.fares);
+        }
+      })
+      .catch(err => console.error('Failed to fetch fares', err));
+  }, []);
 
   const savedChips = useMemo(() => {
     if (!user?.savedLocations) return [];
@@ -190,7 +240,7 @@ export default function DestinationSearchScreen() {
             setMapCenterCoords(region);
           }
         }}
-        mapPadding={{ top: 80, bottom: 450, left: 40, right: 40 }}
+        mapPadding={isMapPicking ? { top: 0, bottom: 0, left: 0, right: 0 } : { top: 100, bottom: 650, left: 40, right: 40 }}
       />
 
       {/* Floating Center Pin for the Map */}
@@ -596,9 +646,11 @@ export default function DestinationSearchScreen() {
                       <View style={[styles.summaryIcon, { backgroundColor: mapTheme.successTint }]}>
                         <MaterialIcon name="payments" size={20} color={mapTheme.success} />
                       </View>
-                      <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 4, fontWeight: '500' }}>Est. Price</Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 4, fontWeight: '500' }}>
+                        {vehicle === 'parcel' ? 'Starting Fare' : 'Fare'}
+                      </Text>
                       <Text style={{ fontSize: 17, fontWeight: '800', color: mapTheme.success }}>
-                        ₹{Math.round(vehicle === 'auto' ? 20 + (routeDistance / 1000) * 8 : 40 + (routeDistance / 1000) * 12)}
+                        ₹{calculateFare(routeDistance / 1000, vehicle as string, fareConfigs)}
                       </Text>
                     </View>
 
@@ -613,10 +665,15 @@ export default function DestinationSearchScreen() {
                     vehicle,
                     pickup,
                     destination,
+                    dropoff: destination,
                     pickupLat: pickupCoords?.latitude,
+                    pLat: pickupCoords?.latitude,
                     pickupLng: pickupCoords?.longitude,
+                    pLng: pickupCoords?.longitude,
                     dropoffLat: destinationCoords?.latitude,
+                    dLat: destinationCoords?.latitude,
                     dropoffLng: destinationCoords?.longitude,
+                    dLng: destinationCoords?.longitude,
                     distance: routeDistance,
                     duration: routeDuration
                   };
@@ -689,10 +746,10 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
   },
   centerPinWrap: {
     position: 'absolute',
-    top: '40%', // slightly above center so it is visible above the bottom sheet
+    top: '50%',
     left: '50%',
     marginLeft: -16,
-    marginTop: -40,
+    marginTop: -36, // Offset exactly half of the pin's effective height so the tip touches the center
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,

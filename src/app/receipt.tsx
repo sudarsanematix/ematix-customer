@@ -1,48 +1,135 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, ActivityIndicator } from 'react-native';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type, spacing, radius } from '../theme/typography';
-import { PAST_ORDERS } from '../data/mockData';
+import { useAuth } from '../context/AuthContext';
+import { authedFetch } from '../utils/api';
+
+type ReceiptRide = {
+  id: string;
+  type: string;
+  status: string;
+  price: number;
+  pickup: { address?: string } | null;
+  dropoff: { address?: string } | null;
+  createdAt: string;
+  completedAt: string | null;
+  customer: { name?: string; phone?: string } | null;
+  partner: {
+    name?: string;
+    vehicleModel?: string;
+    vehicleNumber?: string;
+    rating?: number;
+    ratingCount?: number;
+  } | null;
+};
+
+const formatTime = (value?: string | null) => {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
 
 export default function ReceiptScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { token } = useAuth();
   const { id } = useLocalSearchParams<{ id?: string }>();
 
-  const order =
-    PAST_ORDERS.find((o: any) => o.id === id) || (PAST_ORDERS as any[])[0] || null;
+  // Real receipt data. This screen used to fall back to the first entry in the
+  // mock order list, which meant a deep link with a genuine ride id silently
+  // displayed someone else's invented fare.
+  const hasTarget = Boolean(id && token);
+  const [order, setOrder] = useState<ReceiptRide | null>(null);
+  const [loading, setLoading] = useState(hasTarget);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
 
-  if (!order) {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <SharedHeader currentScreen="receipt" title="Invoice" />
-        <Text style={styles.missing}>Invoice not found.</Text>
-      </SafeAreaView>
-    );
-  }
+  useEffect(() => {
+    if (!id || !token) return;
 
-  const fare = order.fare || { base: order.price, distance: 0, surcharge: 0, coupon: null, couponValue: 0, tip: 0 };
-  const subtotal = fare.base + fare.distance + fare.surcharge;
-  const total = subtotal + fare.tip - (fare.couponValue || 0);
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      setLoadError(null);
+      try {
+        // Backend enforces that only this ride's customer/partner can read it.
+        const data = await authedFetch(`/api/rides/${id}`, token);
+        if (!cancelled) setOrder(data);
+      } catch (e: any) {
+        if (!cancelled) setLoadError(e?.message || 'Could not load this receipt');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [id, token]);
 
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(null), 2400);
   };
 
-  const fareLines: { label: string; value: string }[] = [
-    { label: 'Base Fare', value: `₹${fare.base.toFixed(2)}` },
-    ...(fare.distance > 0 ? [{ label: 'Distance Fare', value: `₹${fare.distance.toFixed(2)}` }] : []),
-    ...(fare.surcharge > 0 ? [{ label: 'Time & Traffic Surcharge', value: `₹${fare.surcharge.toFixed(2)}` }] : []),
-  ];
+  if (!hasTarget) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <SharedHeader currentScreen="receipt" title="Invoice" />
+        <Text style={styles.missing}>This receipt link is missing a trip reference.</Text>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => router.replace('/(tabs)/orders')}>
+          <Text style={styles.actionPrimaryText}>Back to my trips</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
 
-  const isDelivery = order.type === 'delivery';
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <SharedHeader currentScreen="receipt" title="Invoice" />
+        <View style={styles.loadingWrap}>
+          <ActivityIndicator color={colors.primary} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!order) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <SharedHeader currentScreen="receipt" title="Invoice" />
+        <Text style={styles.missing}>{loadError || 'Invoice not found.'}</Text>
+        <TouchableOpacity style={styles.actionBtn} onPress={() => router.replace('/(tabs)/orders')}>
+          <Text style={styles.actionPrimaryText}>Back to my trips</Text>
+        </TouchableOpacity>
+      </SafeAreaView>
+    );
+  }
+
+  // The persisted price is the single source of truth; there is no stored fare
+  // breakdown to show, so the total is reported plainly instead of inventing
+  // base/distance/surcharge lines that never existed.
+  const baseFare = Number(order.price ?? 0);
+  const partnerName = order.partner?.name || 'Partner';
+  const partnerVehicle = order.partner?.vehicleNumber
+    ? `${order.partner.vehicleModel || ''} ${order.partner.vehicleNumber}`.trim()
+    : order.partner?.vehicleModel || '—';
+
+  const isDelivery = order.type === 'delivery' || order.type === 'parcel';
+  const cancelled = order.status === 'cancelled';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -52,10 +139,10 @@ export default function ReceiptScreen() {
         {/* Paid summary */}
         <View style={styles.summaryCard}>
           <View style={[styles.paidBadge, !isDelivery && styles.paidBadgeRide]}>
-            <Text style={styles.paidText}>PAID</Text>
+            <Text style={styles.paidText}>{cancelled ? 'CANCELLED' : 'PAID'}</Text>
           </View>
-          <Text style={styles.totalAmount}>₹{total.toFixed(2)}</Text>
-          <Text style={styles.paidVia}>{order.paymentMethod || 'UPI'}</Text>
+          <Text style={styles.totalAmount}>{cancelled ? '₹0.00' : `₹${baseFare.toFixed(2)}`}</Text>
+          <Text style={styles.paidVia}>{order.customer?.name || 'Trip receipt'}</Text>
           <Text style={styles.orderId}>Order #{order.id}</Text>
         </View>
 
@@ -63,7 +150,7 @@ export default function ReceiptScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.sectionHeader}>
             <MaterialIcon name={isDelivery ? 'inventory-2' : 'local-taxi'} size={18} color={colors.primary} />
-            <Text style={styles.sectionTitle}>{isDelivery ? 'Parcel Delivery' : 'Auto Ride'}</Text>
+            <Text style={styles.sectionTitle}>{isDelivery ? 'Parcel Delivery' : 'Ride'}</Text>
           </View>
           <View style={styles.routeBox}>
             <View style={styles.routeColumn}>
@@ -72,10 +159,10 @@ export default function ReceiptScreen() {
               <View style={[styles.routeDot, { backgroundColor: colors.accentRed }]} />
             </View>
             <View style={styles.routeTextCol}>
-              <Text style={styles.routeLocation}>{order.pickup}</Text>
+              <Text style={styles.routeLocation}>{order.pickup?.address || 'Pickup'}</Text>
               <Text style={styles.routeLabel}>Pickup</Text>
               <View style={styles.routeSecondPoint}>
-                <Text style={styles.routeLocation}>{order.dropoff}</Text>
+                <Text style={styles.routeLocation}>{order.dropoff?.address || 'Drop-off'}</Text>
                 <Text style={styles.routeLabel}>Drop-off</Text>
               </View>
             </View>
@@ -83,7 +170,7 @@ export default function ReceiptScreen() {
           <View style={styles.metaRow}>
             <View style={styles.metaItem}>
               <MaterialIcon name="schedule" size={16} color={colors.textMuted} />
-              <Text style={styles.metaText}>{order.time || order.date.split(',')[1]?.trim() || '—'}</Text>
+              <Text style={styles.metaText}>{formatTime(order.completedAt || order.createdAt)}</Text>
             </View>
             <View style={styles.metaItem}>
               <MaterialIcon name="event" size={16} color={colors.textMuted} />
@@ -95,34 +182,17 @@ export default function ReceiptScreen() {
         {/* Fare breakdown */}
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Fare Breakdown</Text>
-          {fareLines.map((line) => (
-            <View key={line.label} style={styles.fareLine}>
-              <Text style={styles.fareLabel}>{line.label}</Text>
-              <Text style={styles.fareValue}>{line.value}</Text>
-            </View>
-          ))}
-          {fare.coupon && (
-            <View style={styles.fareLine}>
-              <View style={styles.couponRow}>
-                <MaterialIcon name="sell" size={16} color={colors.accentRed} />
-                <Text style={styles.fareLabelCoupon}>Coupon ({fare.coupon})</Text>
-              </View>
-              <Text style={styles.fareValueCoupon}>-₹{fare.couponValue.toFixed(2)}</Text>
-            </View>
-          )}
-          {fare.tip > 0 && (
-            <View style={styles.fareLine}>
-              <Text style={styles.fareLabelTip}>Driver Tip</Text>
-              <Text style={styles.fareValueTip}>₹{fare.tip.toFixed(2)}</Text>
-            </View>
-          )}
+          <View style={styles.fareLine}>
+            <Text style={styles.fareLabel}>{isDelivery ? 'Total Charge' : 'Trip Fare'}</Text>
+            <Text style={styles.fareValue}>{cancelled ? '₹0.00' : `₹${baseFare.toFixed(2)}`}</Text>
+          </View>
 
           <View style={styles.totalRow}>
             <View>
               <Text style={styles.totalLabel}>TOTAL</Text>
-              <Text style={styles.totalMethod}>{order.paymentMethod}</Text>
+              <Text style={styles.totalMethod}>{cancelled ? 'Not charged' : 'Paid in full'}</Text>
             </View>
-            <Text style={styles.totalValue}>₹{total.toFixed(2)}</Text>
+            <Text style={styles.totalValue}>{cancelled ? '₹0.00' : `₹${baseFare.toFixed(2)}`}</Text>
           </View>
         </View>
 
@@ -130,16 +200,18 @@ export default function ReceiptScreen() {
         <View style={styles.sectionCard}>
           <View style={styles.partnerRow}>
             <View style={styles.avatarWrap}>
-              <Text style={styles.avatarText}>{order.partnerName.charAt(0)}</Text>
+              <Text style={styles.avatarText}>{partnerName.charAt(0)}</Text>
             </View>
             <View style={styles.partnerInfo}>
-              <Text style={styles.partnerName}>{order.partnerName}</Text>
-              <Text style={styles.partnerVehicle}>{order.vehicle}</Text>
+              <Text style={styles.partnerName}>{partnerName}</Text>
+              <Text style={styles.partnerVehicle}>{partnerVehicle}</Text>
             </View>
-            <View style={styles.ratingBadge}>
-              <MaterialIcon name="star" size={13} color="#FFB800" />
-              <Text style={styles.ratingText}>{order.rating}</Text>
-            </View>
+            {order.partner?.rating != null && (order.partner.ratingCount ?? 0) > 0 ? (
+              <View style={styles.ratingBadge}>
+                <MaterialIcon name="star" size={13} color="#FFB800" />
+                <Text style={styles.ratingText}>{Number(order.partner.rating).toFixed(1)}</Text>
+              </View>
+            ) : null}
           </View>
         </View>
 
@@ -466,6 +538,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     ...type.labelMd,
     color: colors.inverseOnSurface,
   },
+  loadingWrap: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   missing: {
     ...type.bodyMd,
     color: colors.textMuted,

@@ -88,23 +88,35 @@ type ServiceType = 'ride' | 'parcel';
 /**
  * The chips are UI groupings, not backend values. Every chip must list the real
  * `Partner.vehicleType` values it stands for, otherwise a live partner is
- * filtered out and the radar silently renders nothing. See `models/Partner.js`
- * (`bike | auto | mini_truck | prime_sedan`) and `LiveVehicleKind`.
+ * filtered out and the radar silently renders nothing. The current enum is
+ * `bike | auto | car | premium_car | parcel_bike | parcel_auto`
+ * (`models/Partner.js`); `prime_sedan` / `mini_truck` survive in partner
+ * documents written before the vocabulary changed, so chips list those too.
+ * Partner signup defaults to Bike and the partner app falls back to `bike`,
+ * so every service must offer a chip that matches each signup value.
  */
+type RadarVehicleKind =
+  | LiveVehicleKind
+  | 'parcel_bike'
+  | 'parcel_auto'
+  | 'prime_sedan'
+  | 'mini_truck';
+
 type VehicleChip = {
   key: string;
   label: string;
-  kinds: LiveVehicleKind[];
+  kinds: RadarVehicleKind[];
 };
 
 const VEHICLES_BY_SERVICE: Record<ServiceType, VehicleChip[]> = {
   ride: [
-    { key: 'taxi', label: 'Taxi', kinds: ['prime_sedan', 'mini_truck'] },
+    { key: 'car', label: 'Economic Car', kinds: ['car'] },
+    { key: 'premium_car', label: 'Premium Taxi', kinds: ['premium_car', 'prime_sedan'] },
     { key: 'auto', label: 'Auto', kinds: ['auto'] },
   ],
   parcel: [
-    { key: 'bike', label: 'Bike', kinds: ['bike'] },
-    { key: 'auto', label: 'Auto', kinds: ['auto'] },
+    { key: 'bike', label: 'Bike', kinds: ['bike', 'parcel_bike'] },
+    { key: 'auto', label: 'Auto', kinds: ['auto', 'parcel_auto', 'mini_truck'] },
   ],
 };
 
@@ -123,7 +135,7 @@ export default function HomeScreen() {
   const [scrollEnabled, setScrollEnabled] = useState(true);
 
   const [serviceType, setServiceType] = useState<ServiceType>('ride');
-  const [vehicleChipKey, setVehicleChipKey] = useState<string>('taxi');
+  const [vehicleChipKey, setVehicleChipKey] = useState<string>('car');
 
   const chips = VEHICLES_BY_SERVICE[serviceType];
   // Guards against a stale key when the service changes under us.
@@ -135,8 +147,10 @@ export default function HomeScreen() {
   };
 
   /** Keeps the chip's pin colour and the map markers on one source of truth. */
-  const markerColorFor = (kind?: LiveVehicleKind) =>
-    kind === 'bike' || kind === 'auto' ? mapTheme.success : mapTheme.routeDone;
+  const markerColorFor = (kind?: string) =>
+    kind === 'bike' || kind === 'auto' || kind === 'parcel_bike' || kind === 'parcel_auto'
+      ? mapTheme.success
+      : mapTheme.routeDone;
 
   const locateMe = async () => {
     setAddressName('Locating...');
@@ -262,14 +276,21 @@ export default function HomeScreen() {
       });
     };
 
+    // Rooms live and die with the connection: every (re)connect has to
+    // re-request the snapshot, or a dropped socket leaves the customer out of
+    // ROOM_RIDERS_SEARCHING with no way back in.
+    const syncNearbyPartners = () => socketService.emit('get_nearby_partners', {});
+
     socketService.on('nearby_partners', handleNearbyPartners);
     socketService.on('partner_location_updated', handlePartnerLocationUpdated);
+    socketService.on('connect', syncNearbyPartners);
     socketService.emit('get_nearby_partners', {});
 
     return () => {
       clearTimeout(timer);
       socketService.off('nearby_partners', handleNearbyPartners);
       socketService.off('partner_location_updated', handlePartnerLocationUpdated);
+      socketService.off('connect', syncNearbyPartners);
     };
   }, []);
 
@@ -476,14 +497,34 @@ export default function HomeScreen() {
             <View style={{ flexDirection: 'row', gap: 8 }}>
               {chips.map((chip) => {
                 const isActive = activeChip.key === chip.key;
+                
+                // Map the chip key to the proper local logo asset
+                let chipImage;
+                switch (chip.key) {
+                  case 'car':
+                    chipImage = require('../../../assets/images/economiccarlogo.png');
+                    break;
+                  case 'premium_car':
+                    chipImage = require('../../../assets/images/Premiumcarlogo.png');
+                    break;
+                  case 'auto':
+                    chipImage = require('../../../assets/images/Autologo.png');
+                    break;
+                  case 'bike':
+                    chipImage = require('../../../assets/images/Bikelogo.png');
+                    break;
+                  default:
+                    chipImage = require('../../../assets/images/economiccarlogo.png');
+                }
+
                 return (
                   <TouchableOpacity
                     key={chip.key}
-                    style={{ flex: 1, paddingVertical: 12, alignItems: 'center', borderRadius: 12, borderWidth: 2, borderColor: isActive ? colors.primary : colors.outline, backgroundColor: isActive ? colors.primary + '11' : colors.surface }}
+                    style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 2, alignItems: 'center', borderRadius: 12, borderWidth: 2, borderColor: isActive ? colors.primary : colors.outline, backgroundColor: isActive ? colors.primary + '11' : colors.surface }}
                     onPress={() => setVehicleChipKey(chip.key)}
                   >
-                    <Image source={{ uri: markerImageFor(chip.kinds[0]) }} style={{ width: 40, height: 40, marginBottom: 8, resizeMode: 'contain' }} />
-                    <Text style={{ fontWeight: '600', color: isActive ? colors.primary : colors.onSurfaceVariant }}>{chip.label}</Text>
+                    <Image source={chipImage} style={{ width: 40, height: 40, marginBottom: 8, resizeMode: 'contain' }} />
+                    <Text style={{ fontWeight: '600', fontSize: 12, textAlign: 'center', color: isActive ? colors.primary : colors.onSurfaceVariant }} numberOfLines={2}>{chip.label}</Text>
                   </TouchableOpacity>
                 );
               })}

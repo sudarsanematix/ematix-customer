@@ -59,13 +59,32 @@ export default function ChooseVehicleScreen() {
           >
             <View style={styles.cardContent}>
               <View>
-                <Text style={styles.cardTitle}>Prime Sedan</Text>
+                <Text style={styles.cardTitle}>Economic Car</Text>
                 <Text style={styles.cardDesc}>Comfortable, premium rides</Text>
               </View>
               <MaterialIcon name="arrow-forward" size={24} color="#1C1C1E" />
             </View>
             <Image
               source={require('../../assets/images/car.png')}
+              style={styles.cardImage}
+              resizeMode="contain"
+            />
+          </TouchableOpacity>
+          {/* Premium Car Card */}
+          <TouchableOpacity
+            style={[styles.card, styles.premiumCarCard]}
+            activeOpacity={0.9}
+            onPress={() => handleSelect('premium_car')}
+          >
+            <View style={styles.cardContent}>
+              <View>
+                <Text style={styles.cardTitle}>Premium Taxi</Text>
+                <Text style={styles.cardDesc}>Luxury rides</Text>
+              </View>
+              <MaterialIcon name="arrow-forward" size={24} color="#1C1C1E" />
+            </View>
+            <Image
+              source={require('../../assets/images/premium_car.png')}
               style={styles.cardImage}
               resizeMode="contain"
             />
@@ -117,6 +136,9 @@ const createStyles = (colors: any) => StyleSheet.create({
     backgroundColor: '#FFF8E1', // Light yellow tint
   },
   carCard: {
+    backgroundColor: '#E3F2FD', // Light blue tint
+  },
+  premiumCarCard: {
     backgroundColor: '#F3E5F5', // Light purple tint
   },
   cardContent: {

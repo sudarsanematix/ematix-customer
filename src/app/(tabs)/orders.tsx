@@ -1,28 +1,120 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Image } from 'react-native';
-import { useRouter } from 'expo-router';
-import { PAST_ORDERS } from '../../data/mockData';
+import { useFocusEffect, useRouter } from 'expo-router';
 import SharedHeader from '../../components/SharedHeader';
 import Skeleton from '../../components/Skeleton';
 import MaterialIcon from '../../components/MaterialIcon';
 import { useTheme } from '../../theme/ThemeProvider';
+import { useAuth } from '../../context/AuthContext';
+import { authedFetch } from '../../utils/api';
+
+type HistoryRide = {
+  id: string;
+  type: string;
+  status: string;
+  price: number | string | null;
+  pickup: { address?: string } | null;
+  dropoff: { address?: string } | null;
+  completedAt: string | null;
+  cancelledAt: string | null;
+  cancelReason: string;
+  partner: {
+    name: string;
+    vehicleModel: string;
+    vehicleNumber: string;
+    vehicleType: string;
+    rating: number;
+    ratingCount: number;
+  } | null;
+  rated: boolean;
+  rating: number | null;
+};
+
+const VEHICLE_LABELS: Record<string, string> = {
+  bike: 'Bike',
+  auto: 'Auto',
+  car: 'Economic Car',
+  premium_car: 'Premium Taxi',
+};
+
+const formatWhen = (value: string | null) => {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, {
+    day: '2-digit',
+    month: 'short',
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const titleFor = (ride: HistoryRide) => {
+  if (ride.type === 'parcel' || ride.type === 'delivery') {
+    return ride.status === 'cancelled' ? 'Cancelled delivery' : 'Parcel delivery';
+  }
+  const rawType = ride.partner?.vehicleType || (ride as any).vehicleType || '';
+  // If backend stored the display name instead of the ID
+  if (rawType.toLowerCase().includes('car') || rawType.toLowerCase().includes('auto') || rawType.toLowerCase().includes('taxi')) {
+    // Avoid appending ' ride' if it already sounds complete, unless it's just 'auto'
+    if (rawType.toLowerCase() === 'auto' || rawType.toLowerCase() === 'car') {
+      return `${rawType.charAt(0).toUpperCase() + rawType.slice(1)} ride`;
+    }
+    return rawType;
+  }
+  const label = VEHICLE_LABELS[rawType] || rawType || 'Ride';
+  return `${label} ride`;
+};
+
+const getRideImage = (order: HistoryRide) => {
+  const vType = (order.partner?.vehicleType || (order as any).vehicleType || '').toLowerCase();
+  
+  if (vType === 'auto' || vType.includes('auto')) return require('../../../assets/images/auto.png');
+  if (vType === 'premium_car' || vType.includes('premium') || vType.includes('taxi')) return require('../../../assets/images/premium_car.png');
+  if (vType === 'car' || vType.includes('economic') || vType.includes('sedan')) return require('../../../assets/images/car.png');
+  
+  return require('../../../assets/images/bike.png');
+};
 
 export default function OrdersScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
 
   const router = useRouter();
+  const { token } = useAuth();
   const [filter, setFilter] = useState('all');
+  const [rides, setRides] = useState<HistoryRide[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  React.useEffect(() => {
-    const timer = setTimeout(() => setIsLoading(false), 2000);
-    return () => clearTimeout(timer);
-  }, []);
+  // Refetch whenever the tab regains focus (useFocusEffect also fires on mount)
+  // so a rating submitted on /rate is reflected on return.
+  const load = useCallback(async () => {
+    if (!token) {
+      setError('Please login to see your trips');
+      setIsLoading(false);
+      return;
+    }
+    try {
+      setError(null);
+      const data = await authedFetch('/api/rides/history?limit=50', token);
+      setRides(Array.isArray(data?.rides) ? data.rides : []);
+    } catch (e: any) {
+      setError(e?.message || 'Could not load your trips');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [token]);
 
-  const filteredOrders = PAST_ORDERS.filter((order: any) => {
-    if (filter === 'rides') return order.type === 'ride';
-    if (filter === 'deliveries') return order.type === 'delivery' || order.type === 'parcel';
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+
+  const filteredOrders = rides.filter((ride) => {
+    if (filter === 'rides') return ride.type === 'ride';
+    if (filter === 'deliveries') return ride.type === 'delivery' || ride.type === 'parcel';
     return true;
   });
 
@@ -44,7 +136,11 @@ export default function OrdersScreen() {
               style={[styles.tab, filter === tab && styles.tabActive]}
             >
               <Text style={[styles.tabText, filter === tab && styles.tabTextActive]}>
-                {tab === 'all' ? `All (${PAST_ORDERS.length})` : tab.charAt(0).toUpperCase() + tab.slice(1)}
+                {tab === 'all'
+                  ? `All (${rides.length})`
+                  : tab === 'rides'
+                    ? `Rides (${rides.filter((r) => r.type === 'ride').length})`
+                    : `Deliveries (${rides.filter((r) => r.type === 'parcel' || r.type === 'delivery').length})`}
               </Text>
             </TouchableOpacity>
           ))}
@@ -78,6 +174,15 @@ export default function OrdersScreen() {
                 </View>
               </View>
             ))
+          ) : error ? (
+            <View style={styles.emptyState}>
+              <MaterialIcon name="cloud-off" size={48} color={colors.outlineVariant} />
+              <Text style={styles.emptyTitle}>Could not load your trips</Text>
+              <Text style={styles.emptySubtitle}>{error}</Text>
+              <TouchableOpacity style={styles.btnPrimary} onPress={() => { setIsLoading(true); load(); }}>
+                <Text style={styles.btnPrimaryText}>Retry</Text>
+              </TouchableOpacity>
+            </View>
           ) : filteredOrders.length === 0 ? (
             <View style={styles.emptyState}>
               <MaterialIcon name="receipt-long" size={48} color={colors.outlineVariant} />
@@ -85,70 +190,87 @@ export default function OrdersScreen() {
               <Text style={styles.emptySubtitle}>Your past trips and deliveries will show up here.</Text>
             </View>
           ) : (
-            filteredOrders.map((order: any) => (
-            <View key={order.id} style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View style={styles.cardHeaderLeft}>
-                  <View style={styles.iconContainer}>
-                    <Image
-                      source={order.type === 'ride' 
-                        ? require('../../../assets/images/auto.png') 
-                        : require('../../../assets/images/bike.png')}
-                      style={styles.cardIcon}
-                    />
+            filteredOrders.map((order) => (
+              <View key={order.id} style={styles.card}>
+                <View style={styles.cardHeader}>
+                  <View style={styles.cardHeaderLeft}>
+                    <View style={styles.iconContainer}>
+                      <Image
+                        source={getRideImage(order)}
+                        style={styles.cardIcon}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.orderTitle}>{titleFor(order)}</Text>
+                      <Text style={styles.orderDate}>
+                        {formatWhen(order.completedAt || order.cancelledAt) || 'Date unavailable'}
+                      </Text>
+                    </View>
                   </View>
-                  <View>
-                    <Text style={styles.orderTitle}>{order.title}</Text>
-                    <Text style={styles.orderDate}>{order.date}</Text>
+
+                  <View style={styles.cardHeaderRight}>
+                    <Text style={styles.orderPrice}>
+                      {order.status === 'cancelled' ? '—' : `${order.price ?? '—'}`}
+                    </Text>
+                    <View style={styles.statusBadge}>
+                      <Text style={styles.statusText}>
+                        {order.status.charAt(0).toUpperCase() + order.status.slice(1)}
+                      </Text>
+                    </View>
                   </View>
                 </View>
 
-                <View style={styles.cardHeaderRight}>
-                  <Text style={styles.orderPrice}>₹{order.price}</Text>
-                  <View style={styles.statusBadge}>
-                    <Text style={styles.statusText}>{order.status}</Text>
+                {order.status === 'cancelled' && order.cancelReason ? (
+                  <Text style={styles.cancelNote}>Cancelled: {order.cancelReason}</Text>
+                ) : null}
+
+                {/* Waypoints */}
+                <View style={styles.waypointsBox}>
+                  <View style={styles.waypointRow}>
+                    <View style={[styles.dot, { backgroundColor: colors.primary }]} />
+                    <Text style={styles.waypointText} numberOfLines={1}>
+                      {order.pickup?.address || 'Pickup unavailable'}
+                    </Text>
+                  </View>
+                  <View style={styles.waypointRow}>
+                    <View style={[styles.dot, { backgroundColor: colors.accentRed }]} />
+                    <Text style={styles.waypointText} numberOfLines={1}>
+                      {order.dropoff?.address || 'Drop-off unavailable'}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Actions */}
+                <View style={styles.actionsRow}>
+                  <View style={styles.partnerInfo}>
+                    <Text style={styles.partnerIcon}>👤</Text>
+                    <Text style={styles.partnerName} numberOfLines={1}>
+                      {order.partner?.name || 'No partner assigned'}
+                    </Text>
+                    {order.rated && order.rating ? (
+                      <Text style={styles.ratedStars}>{order.rating}★</Text>
+                    ) : null}
+                  </View>
+                  <View style={styles.buttonsRow}>
+                    {/* Retry path for a rating that failed on the completion screen. */}
+                    {order.status === 'completed' && !order.rated ? (
+                      <TouchableOpacity
+                        style={styles.btnPrimary}
+                        onPress={() => router.push({ pathname: '/rate', params: { rideId: order.id } })}
+                      >
+                        <Text style={styles.btnPrimaryText}>Rate</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                    <TouchableOpacity
+                      style={styles.btnSecondary}
+                      onPress={() => router.push({ pathname: '/receipt', params: { id: order.id } })}
+                    >
+                      <Text style={styles.btnSecondaryText}>View Receipt</Text>
+                    </TouchableOpacity>
                   </View>
                 </View>
               </View>
-
-              {/* Waypoints */}
-              <View style={styles.waypointsBox}>
-                <View style={styles.waypointRow}>
-                  <View style={[styles.dot, { backgroundColor: colors.primary }]} />
-                  <Text style={styles.waypointText} numberOfLines={1}>{order.pickup}</Text>
-                </View>
-                <View style={styles.waypointRow}>
-                  <View style={[styles.dot, { backgroundColor: colors.accentRed }]} />
-                  <Text style={styles.waypointText} numberOfLines={1}>{order.dropoff}</Text>
-                </View>
-              </View>
-
-              {/* Actions */}
-              <View style={styles.actionsRow}>
-                <View style={styles.partnerInfo}>
-                  <Text style={styles.partnerIcon}>👤</Text>
-                  <Text style={styles.partnerName}>{order.partnerName}</Text>
-                </View>
-                <View style={styles.buttonsRow}>
-                  <TouchableOpacity
-                    style={styles.btnSecondary}
-                    onPress={() => router.push({ pathname: '/receipt', params: { id: order.id } })}
-                  >
-                    <Text style={styles.btnSecondaryText}>View Receipt</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.btnPrimary}
-                    onPress={() => {
-                      if (order.type === 'ride') router.push('/select-ride');
-                    else router.push('/package-details');
-                    }}
-                  >
-                    <Text style={styles.btnPrimaryText}>Rebook</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            </View>
-          ))
+            ))
           )}
         </View>
       </ScrollView>
@@ -227,6 +349,12 @@ const createStyles = (colors: any) => StyleSheet.create({
   partnerInfo: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   partnerIcon: { fontSize: 14 },
   partnerName: { fontSize: 11, color: colors.textMuted },
+  ratedStars: { fontSize: 11, color: colors.primary, fontWeight: 'bold' },
+  cancelNote: {
+    fontSize: 11,
+    color: colors.accentRed,
+    marginBottom: 8,
+  },
   buttonsRow: { flexDirection: 'row', gap: 8 },
   btnSecondary: {
     backgroundColor: colors.surfaceGray,

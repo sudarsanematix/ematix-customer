@@ -179,12 +179,22 @@ const RUNTIME = String.raw`
   function vehicleElement(kind) {
     var element = document.createElement('div');
     element.className = 'ematix-vehicle';
+    
+    var svgContent = '';
+    if (kind === 'car') {
+      svgContent = '<rect x="6" y="2" width="12" height="20" rx="4" fill="var(--ematix-on-base)"/><rect x="7" y="6" width="10" height="5" fill="#000" opacity="0.4" rx="1"/><rect x="7" y="15" width="10" height="4" fill="#000" opacity="0.4" rx="1"/>';
+    } else if (kind === 'auto') {
+      svgContent = '<rect x="6" y="2" width="12" height="20" rx="3" fill="var(--ematix-on-base)"/><rect x="7" y="4" width="10" height="4" fill="#000" opacity="0.4" rx="1"/><rect x="6" y="11" width="12" height="11" fill="var(--ematix-on-base)" rx="1"/><path d="M5 14L5 18L19 18L19 14Z" fill="#000" opacity="0.2"/>';
+    } else {
+      svgContent = '<rect x="10" y="2" width="4" height="20" rx="2" fill="var(--ematix-on-base)"/><circle cx="12" cy="14" r="4" fill="var(--ematix-on-base)"/><rect x="7" y="7" width="10" height="2" fill="var(--ematix-on-base)" rx="1"/>';
+    }
+
     element.innerHTML =
       '<span class="ematix-vehicle__body" style="background:' +
       vehicleColorFor(kind) +
       '">' +
       '<svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">' +
-      '<path class="ematix-vehicle__arrow" d="M12 3.4 L18.2 18.6 L12 15.1 L5.8 18.6 Z" />' +
+      svgContent +
       '</svg>' +
       '</span>';
     return element;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -18,12 +18,11 @@ import { fonts, type, spacing, radius } from '../../theme/typography';
 import SharedHeader from '../../components/SharedHeader';
 import MaterialIcon from '../../components/MaterialIcon';
 import { useAuth } from '../../context/AuthContext';
+import { authedFetch } from '../../utils/api';
 
-const STATS = [
-  { label: 'Trips', value: '48', icon: 'local-taxi' },
-  { label: 'Deliveries', value: '23', icon: 'inventory-2' },
-  { label: 'Ematix Points', value: '1,240', icon: 'stars' },
-] as const;
+// Number formatting for the stat tiles. `toLocaleString` keeps the thousands
+// separators the old mock values used to carry.
+const formatCount = (n: number) => n.toLocaleString('en-IN');
 
 // Mock data for FAQs
 const FAQS = [
@@ -151,7 +150,7 @@ export default function ProfileScreen() {
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
-  const { user, token, logout, login } = useAuth();
+  const { user, token, logout, login, refresh, stats, rating, isRefreshing } = useAuth();
 
   const [sheet, setSheet] = useState<SheetId>(null);
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -166,11 +165,12 @@ export default function ProfileScreen() {
   const [newContactRelation, setNewContactRelation] = useState('');
   const [newContactPhone, setNewContactPhone] = useState('');
 
-  const [userName, setUserName] = useState(user?.name || 'Guest');
-  const [userPhone, setUserPhone] = useState(user?.phone || 'No phone set');
-  const [editName, setEditName] = useState(userName);
-  const [editPhone, setEditPhone] = useState(userPhone);
+  const [editName, setEditName] = useState('');
+  const [editEmail, setEditEmail] = useState('');
+  const [savingProfile, setSavingProfile] = useState(false);
 
+  // Preferences are server-owned. Local state only exists so a toggle feels
+  // instant; every change is persisted and the server copy wins on refresh.
   const [notifPrefs, setNotifPrefs] = useState({
     rides: true,
     deliveries: true,
@@ -182,6 +182,36 @@ export default function ProfileScreen() {
     shareLive: false,
     language: 'English',
   });
+
+  // Adopt the persisted preferences whenever a new server copy arrives. This
+  // runs during render rather than in an effect (React's "adjust state when a
+  // prop changes" pattern) so it does not trigger a cascading render.
+  const [syncedPreferences, setSyncedPreferences] = useState(user?.preferences);
+  if (user?.preferences !== syncedPreferences) {
+    setSyncedPreferences(user?.preferences);
+    const p = user?.preferences;
+    if (p) {
+      setNotifPrefs({
+        rides: p.notifications.rides,
+        deliveries: p.notifications.deliveries,
+        offers: p.notifications.offers,
+        safety: p.notifications.safety,
+      });
+      setPrefs({
+        receipts: p.receipts,
+        shareLive: p.shareLiveLocation,
+        language: p.language,
+      });
+    }
+  }
+
+  // Load stats and the authoritative profile the first time this screen mounts.
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const userName = user?.name || 'Guest';
+  const userPhone = user?.phone || 'No phone set';
   const [payments, setPayments] = useState([
     { id: 'card', type: 'card' as const, title: 'HDFC Visa \u2022\u2022\u2022\u2022 4829', sub: 'Expires 08 / 27' },
     { id: 'upi', type: 'upi' as const, title: 'UPI \u2022 alex@okhdfc', sub: 'Default payment method' },
@@ -196,6 +226,59 @@ export default function ProfileScreen() {
   const removePayment = (id: string) => {
     setPayments((p) => p.filter((x) => x.id !== id));
     showToast('Payment method removed');
+  };
+
+  const saveProfile = async () => {
+    if (!token) return;
+    setSavingProfile(true);
+    try {
+      const data = await authedFetch('/api/profile/customer/profile', token, {
+        method: 'PUT',
+        body: { name: editName.trim(), email: editEmail.trim() },
+      });
+      if (data?.user) {
+        await login(data.user, token);
+        setSheet(null);
+        showToast('Profile updated');
+      }
+    } catch (e) {
+      showToast(e instanceof Error ? e.message : 'Failed to update profile');
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  // Preferences are written optimistically then reconciled with the server
+  // response, so a rejected write snaps back to the authoritative values.
+  const persistPreferences = async (patch: Record<string, unknown>) => {
+    if (!token) return;
+    try {
+      const data = await authedFetch('/api/profile/customer/preferences', token, {
+        method: 'PUT',
+        body: patch,
+      });
+      if (data?.user) await login(data.user, token);
+    } catch {
+      showToast('Could not save preference');
+      refresh();
+    }
+  };
+
+  const setNotifPref = (key: 'rides' | 'deliveries' | 'offers' | 'safety', value: boolean) => {
+    setNotifPrefs((s) => {
+      const next = { ...s, [key]: value };
+      persistPreferences({ notifications: { [key]: value } });
+      return next;
+    });
+  };
+
+  const setPref = (key: 'receipts' | 'shareLive' | 'language', value: boolean | string) => {
+    setPrefs((s) => {
+      const next = { ...s, [key]: value };
+      if (key === 'language') persistPreferences({ language: value });
+      else persistPreferences({ [key === 'shareLive' ? 'shareLiveLocation' : key]: value });
+      return next;
+    });
   };
 
   const saveNewAddress = async () => {
@@ -221,16 +304,11 @@ export default function ProfileScreen() {
     try {
       const currentLocs = user?.savedLocations || [];
       const updated = [...currentLocs, { name: newAddressName.trim(), address: newAddressText.trim(), lat, lng }];
-      const res = await fetch('http://192.168.1.34:4000/api/auth/customer/saved-locations', {
+      const data = await authedFetch('/api/auth/customer/saved-locations', token, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ savedLocations: updated })
+        body: { savedLocations: updated },
       });
-      const data = await res.json();
-      if (data.success && data.user && token) {
+      if (data?.success && data.user && token) {
         await login(data.user, token);
         setAddAddressVisible(false);
         setNewAddressName('');
@@ -239,7 +317,7 @@ export default function ProfileScreen() {
       } else {
         showToast('Failed to save address');
       }
-    } catch (e) {
+    } catch {
       showToast('Network error');
     }
   };
@@ -248,20 +326,15 @@ export default function ProfileScreen() {
     try {
       const currentLocs = user?.savedLocations || [];
       const updated = currentLocs.filter((l: any) => l.name !== nameToRemove);
-      const res = await fetch('http://192.168.1.34:4000/api/auth/customer/saved-locations', {
+      const data = await authedFetch('/api/auth/customer/saved-locations', token, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ savedLocations: updated })
+        body: { savedLocations: updated },
       });
-      const data = await res.json();
-      if (data.success && data.user && token) {
+      if (data?.success && data.user && token) {
         await login(data.user, token);
         showToast('Address removed');
       }
-    } catch (e) {
+    } catch {
       showToast('Network error');
     }
   };
@@ -274,16 +347,11 @@ export default function ProfileScreen() {
     try {
       const currentContacts = user?.emergencyContacts || [];
       const updated = [...currentContacts, { name: newContactName.trim(), relation: newContactRelation.trim() || 'Friend', phone: newContactPhone.trim() }];
-      const res = await fetch('http://192.168.1.34:4000/api/auth/customer/emergency-contacts', {
+      const data = await authedFetch('/api/auth/customer/emergency-contacts', token, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ emergencyContacts: updated })
+        body: { emergencyContacts: updated },
       });
-      const data = await res.json();
-      if (data.success && data.user && token) {
+      if (data?.success && data.user && token) {
         await login(data.user, token);
         setAddContactVisible(false);
         setNewContactName('');
@@ -293,7 +361,7 @@ export default function ProfileScreen() {
       } else {
         showToast('Failed to save contact');
       }
-    } catch (e) {
+    } catch {
       showToast('Network error');
     }
   };
@@ -302,20 +370,15 @@ export default function ProfileScreen() {
     try {
       const currentContacts = user?.emergencyContacts || [];
       const updated = currentContacts.filter((c: any) => c.phone !== phoneToRemove);
-      const res = await fetch('http://192.168.1.34:4000/api/auth/customer/emergency-contacts', {
+      const data = await authedFetch('/api/auth/customer/emergency-contacts', token, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
-        },
-        body: JSON.stringify({ emergencyContacts: updated })
+        body: { emergencyContacts: updated },
       });
-      const data = await res.json();
-      if (data.success && data.user && token) {
+      if (data?.success && data.user && token) {
         await login(data.user, token);
         showToast('Contact removed');
       }
-    } catch (e) {
+    } catch {
       showToast('Network error');
     }
   };
@@ -336,22 +399,34 @@ export default function ProfileScreen() {
           <View style={styles.userInfo}>
             <Text style={styles.userName}>{userName}</Text>
             <Text style={styles.userPhone}>{userPhone}</Text>
-            <View style={styles.ratingWrap}>
-              <MaterialIcon name="star" size={13} color="#f4b400" />
-              <Text style={styles.ratingText}>4.9 rated</Text>
-            </View>
+            {rating?.rating != null ? (
+              <View style={styles.ratingWrap}>
+                <MaterialIcon name="star" size={13} color="#f4b400" />
+                <Text style={styles.ratingText}>{rating.rating.toFixed(1)} rated</Text>
+              </View>
+            ) : null}
           </View>
-          <TouchableOpacity style={styles.editBtn} activeOpacity={0.8} onPress={() => setSheet('edit')}>
+          <TouchableOpacity style={styles.editBtn} activeOpacity={0.8} onPress={() => {
+            setEditName(user?.name || '');
+            setEditEmail(user?.email || '');
+            setSheet('edit');
+          }}>
             <MaterialIcon name="edit" size={18} color={colors.primary} />
           </TouchableOpacity>
         </View>
 
         {/* Stats */}
         <View style={styles.statsRow}>
-          {STATS.map((s) => (
+          {([
+            { label: 'Trips', value: stats?.rides, icon: 'local-taxi' },
+            { label: 'Deliveries', value: stats?.deliveries, icon: 'inventory-2' },
+            { label: 'Total Spent', value: stats?.lifetimeSpend, icon: 'account-balance-wallet', prefix: '\u20b9' },
+          ] as const).map((s) => (
             <View key={s.label} style={styles.statTile}>
               <MaterialIcon name={s.icon} size={20} color={colors.primary} />
-              <Text style={styles.statValue}>{s.value}</Text>
+              <Text style={styles.statValue}>
+                {isRefreshing && s.value === undefined ? '--' : `${'prefix' in s ? s.prefix : ''}${formatCount(s.value ?? 0)}`}
+              </Text>
               <Text style={styles.statLabel}>{s.label}</Text>
             </View>
           ))}
@@ -401,20 +476,39 @@ export default function ProfileScreen() {
       {/* Edit Profile */}
       <Sheet visible={sheet === 'edit'} title="Edit Profile" onClose={() => setSheet(null)}>
         <Text style={styles.fieldLabel}>Full name</Text>
-        <TextInput style={styles.input} value={editName} onChangeText={setEditName} placeholder="Full name" placeholderTextColor={colors.textMuted} />
-        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Mobile number</Text>
-        <TextInput style={styles.input} value={editPhone} onChangeText={setEditPhone} placeholder="Mobile number" placeholderTextColor={colors.textMuted} keyboardType="phone-pad" />
+        <TextInput
+          style={styles.input}
+          value={editName}
+          onChangeText={setEditName}
+          placeholder="Full name"
+          placeholderTextColor={colors.textMuted}
+        />
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Email</Text>
+        <TextInput
+          style={styles.input}
+          value={editEmail}
+          onChangeText={setEditEmail}
+          placeholder="you@example.com"
+          placeholderTextColor={colors.textMuted}
+          keyboardType="email-address"
+          autoCapitalize="none"
+        />
+        <Text style={styles.fieldLabel}>Mobile number</Text>
+        {/* Phone is the login handle and the unique account key, so it cannot
+            be changed from here. */}
+        <View style={[styles.input, styles.readOnlyInput]}>
+          <Text style={styles.readOnlyText}>{userPhone}</Text>
+        </View>
+        <Text style={styles.readOnlyHint}>
+          Your mobile number is used to sign in and cannot be changed here.
+        </Text>
         <TouchableOpacity
           style={styles.primaryBtn}
           activeOpacity={0.85}
-          onPress={() => {
-            setUserName(editName.trim() || userName);
-            setUserPhone(editPhone.trim() || userPhone);
-            setSheet(null);
-            showToast('Profile updated');
-          }}
+          onPress={saveProfile}
+          disabled={savingProfile}
         >
-          <Text style={styles.primaryBtnText}>Save changes</Text>
+          <Text style={styles.primaryBtnText}>{savingProfile ? 'Saving...' : 'Save changes'}</Text>
         </TouchableOpacity>
       </Sheet>
 
@@ -488,10 +582,10 @@ export default function ProfileScreen() {
 
       {/* Notifications */}
       <Sheet visible={sheet === 'notifications'} title="Notifications" onClose={() => setSheet(null)}>
-        <ToggleRow label="Ride updates" sublabel="Booking, driver & fare alerts" value={notifPrefs.rides} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, rides: v }))} />
-        <ToggleRow label="Delivery updates" sublabel="Pickup, transit & drop-off alerts" value={notifPrefs.deliveries} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, deliveries: v }))} />
-        <ToggleRow label="Offers & promos" sublabel="Discounts and cashback" value={notifPrefs.offers} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, offers: v }))} />
-        <ToggleRow label="Safety alerts" sublabel="Route & emergency notifications" value={notifPrefs.safety} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, safety: v }))} />
+        <ToggleRow label="Ride updates" sublabel="Booking, driver & fare alerts" value={notifPrefs.rides} onValueChange={(v) => setNotifPref('rides', v)} />
+        <ToggleRow label="Delivery updates" sublabel="Pickup, transit & drop-off alerts" value={notifPrefs.deliveries} onValueChange={(v) => setNotifPref('deliveries', v)} />
+        <ToggleRow label="Offers & promos" sublabel="Discounts and cashback" value={notifPrefs.offers} onValueChange={(v) => setNotifPref('offers', v)} />
+        <ToggleRow label="Safety alerts" sublabel="Route & emergency notifications" value={notifPrefs.safety} onValueChange={(v) => setNotifPref('safety', v)} />
       </Sheet>
 
       {/* Emergency Contacts */}
@@ -575,15 +669,15 @@ export default function ProfileScreen() {
               key={lang}
               style={[styles.langChip, prefs.language === lang && styles.langChipActive]}
               activeOpacity={0.85}
-              onPress={() => setPrefs((s) => ({ ...s, language: lang }))}
+              onPress={() => setPref('language', lang)}
             >
               <Text style={[styles.langChipText, prefs.language === lang && styles.langChipTextActive]}>{lang}</Text>
             </TouchableOpacity>
           ))}
         </View>
         <View style={{ marginTop: spacing.stackMd }}>
-          <ToggleRow label="Send trip receipts on WhatsApp" sublabel="After every ride & delivery" value={prefs.receipts} onValueChange={(v) => setPrefs((s) => ({ ...s, receipts: v }))} />
-          <ToggleRow label="Share live location during rides" sublabel="Only with your emergency contacts" value={prefs.shareLive} onValueChange={(v) => setPrefs((s) => ({ ...s, shareLive: v }))} />
+          <ToggleRow label="Send trip receipts on WhatsApp" sublabel="After every ride & delivery" value={prefs.receipts} onValueChange={(v) => setPref('receipts', v)} />
+          <ToggleRow label="Share live location during rides" sublabel="Only with your emergency contacts" value={prefs.shareLive} onValueChange={(v) => setPref('shareLive', v)} />
         </View>
       </Sheet>
 
@@ -846,6 +940,16 @@ const createStyles = (colors: any) => StyleSheet.create({
     marginTop: spacing.stackLg,
   },
   primaryBtnText: { ...type.labelMd, color: colors.onPrimary },
+  readOnlyInput: {
+    justifyContent: 'center',
+    opacity: 0.7,
+  },
+  readOnlyText: { ...type.bodyMd, color: colors.onSurfaceVariant },
+  readOnlyHint: {
+    ...type.bodySm,
+    color: colors.textMuted,
+    marginTop: spacing.stackSm,
+  },
   emptyText: { ...type.bodyMd, color: colors.textMuted, textAlign: 'center', paddingVertical: spacing.stackLg },
   paymentCard: {
     flexDirection: 'row',

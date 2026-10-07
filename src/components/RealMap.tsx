@@ -75,6 +75,8 @@ export default function RealMap({
   const markersKey = JSON.stringify(markers);
   // Content-keyed, so callers can pass an inline array without a reload.
   const routeKey = JSON.stringify(routeCoordinates);
+  const paddingKey = JSON.stringify(mapPadding);
+  const pulseKey = JSON.stringify(pulseMarker);
 
   const isWebViewReady = useRef(false);
   const pendingInjections = useRef<string[]>([]);
@@ -154,11 +156,13 @@ export default function RealMap({
     let pulseJs = '';
     if (pulseMarker) {
       pulseJs = `
-        const el = document.createElement('div');
-        el.className = 'pulse-marker';
-        new mapboxgl.Marker({ element: el })
-          .setLngLat([${pulseMarker.longitude}, ${pulseMarker.latitude}])
-          .addTo(map);
+        map.on('load', () => {
+          const pel = document.createElement('div');
+          pel.className = 'pulse-marker';
+          new mapboxgl.Marker({ element: pel })
+            .setLngLat([${pulseMarker.longitude}, ${pulseMarker.latitude}])
+            .addTo(map);
+        });
       `;
     }
 
@@ -429,7 +433,7 @@ export default function RealMap({
     // RealMap has no command bridge, so the theme is baked in and the WebView
     // re-keys on toggle. That is fine here: it is a static preview map, never a
     // live ride whose camera or follow mode would be lost.
-  }, [interactive, routeKey, showUserLocation, pulseMarker, theme]);
+  }, [interactive, routeKey, showUserLocation, pulseKey, theme, paddingKey]);
 
   return (
     <View style={[styles.container, { backgroundColor: theme.base }, style]}>
