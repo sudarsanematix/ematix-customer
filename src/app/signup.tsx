@@ -98,7 +98,8 @@ export default function SignupScreen() {
     setLoading(true);
     setErrorMsg('');
     try {
-      const response = await fetch('http://192.168.1.34:4000/api/auth/customer/register', {
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+      const response = await fetch(`${API_BASE}/api/auth/customer/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, name, email, homeAddress, workAddress })

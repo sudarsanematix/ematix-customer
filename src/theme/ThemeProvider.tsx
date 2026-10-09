@@ -10,7 +10,7 @@ type ThemeType = {
 const ThemeContext = createContext<ThemeType>({
   isDark: false,
   colors: lightColors,
-  toggleTheme: () => {},
+  toggleTheme: () => { },
 });
 
 export function ThemeProvider({ children }: { children: ReactNode }) {

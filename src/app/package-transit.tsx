@@ -19,6 +19,8 @@ type RideData = {
   type?: string;
   status?: string;
   otp?: string | null;
+  vehicleType?: string;
+  price?: number | string | null;
   pickup?: { address?: string; lat?: number; lng?: number } | null;
   dropoff?: { address?: string; lat?: number; lng?: number } | null;
   packageDetails?: {
@@ -253,7 +255,13 @@ export default function PackageTransitScreen() {
         if (cancelled || !data) return;
         // Live socket data always wins over the REST snapshot.
         setRide((prev) => prev ?? data);
-        if (data.status === 'completed') router.replace(`/package-delivered?rideId=${rideId}`);
+        if (data.status === 'completed' || data.status === 'cancelled') {
+          if (!hasNavigated.current) {
+            hasNavigated.current = true;
+            if (data.status === 'completed') router.replace(`/package-delivered?rideId=${rideId}`);
+            else router.replace(`/(tabs)/home`);
+          }
+        }
       } catch (e) {
         console.warn('Ride REST fallback failed', e);
       }
@@ -261,44 +269,169 @@ export default function PackageTransitScreen() {
     return () => { cancelled = true; };
   }, [rideId, token, router]);
 
+  const hasNavigated = useRef(false);
+
   useEffect(() => {
     socketService.connect();
     if (rideId) socketService.joinRide(rideId, 'customer', user?.id);
 
+
     const onDetails = (data: any) => {
-      if (!data) return;
-      if (rideId && data.id && data.id !== rideId) return;
-      setRide(data);
-      if (data.status === 'completed') router.replace(`/package-delivered?rideId=${rideId}`);
+      if (!data || !data.id || String(data.id) !== String(rideId)) {
+        return;
+      }
+
+      // Don't overwrite a terminal state with an older snapshot.
+      setRide((prev) => {
+        if (
+          prev?.status === 'completed' ||
+          prev?.status === 'cancelled'
+        ) {
+          return prev;
+        }
+
+        return data;
+      });
+
+      // Navigate when the server confirms a terminal status.
+      if (
+        data.status === 'completed' ||
+        data.status === 'cancelled'
+      ) {
+        if (hasNavigated.current) return;
+
+        hasNavigated.current = true;
+
+        if (data.status === 'completed') {
+          router.replace(`/package-delivered?rideId=${rideId}`);
+        } else {
+          router.replace('/(tabs)/home');
+        }
+      }
     };
 
+
     const onCompleted = (data: any) => {
-      if (rideId && data?.id && data.id !== rideId) return;
+      if (!data || !data.id || data.id !== rideId) return;
+      if (hasNavigated.current) return;
+      hasNavigated.current = true;
       router.replace(`/package-delivered?rideId=${rideId}`);
+    };
+
+    const onCancelled = (data: any) => {
+      if (!data || !data.rideId || data.rideId !== rideId) return;
+      if (hasNavigated.current) return;
+      hasNavigated.current = true;
+      setRide((prev) => (prev ? { ...prev, status: 'cancelled' } : prev));
+      Alert.alert('Ride Cancelled', 'The delivery was cancelled by the partner.');
+      router.replace(`/(tabs)/home`);
     };
 
     // Guarded by rideId: the room is shared with the partner app, so a stale
     // ride's status must never rewrite this screen.
+
     const onStatus = (data: any) => {
-      if (data?.rideId && data.rideId !== rideId) return;
-      setRide((prev) =>
-        prev
-          ? {
-            ...prev,
-            status: data?.status ?? prev.status,
-            ...(data?.arrivedAt ? { arrivedAt: data.arrivedAt } : null),
-          }
-          : prev
-      );
+      if (!data || !data.rideId || String(data.rideId) !== String(rideId)) {
+        return;
+      }
+
+      // Calculate reassignment from the current rendered ride BEFORE setRide.
+      const currentOrder = [
+        'pending',
+        'accepted',
+        'en_route_pickup',
+        'arrived',
+        'en_route_dropoff',
+        'completed',
+        'cancelled',
+      ];
+
+      const currentStatus = ride?.status ?? '';
+      const currentIndex = currentOrder.indexOf(currentStatus);
+
+      const isReassignment =
+        data.status === 'pending' && currentIndex > 0;
+
+      setRide((prev) => {
+        if (!prev) return prev;
+
+        // Never overwrite a terminal state.
+        if (
+          prev.status === 'completed' ||
+          prev.status === 'cancelled'
+        ) {
+          return prev;
+        }
+
+        const order = [
+          'pending',
+          'accepted',
+          'en_route_pickup',
+          'arrived',
+          'en_route_dropoff',
+          'completed',
+          'cancelled',
+        ];
+
+        const prevIndex = order.indexOf(prev.status ?? '');
+        const nextIndex = order.indexOf(data.status ?? '');
+
+        if (
+          prevIndex !== -1 &&
+          nextIndex !== -1 &&
+          nextIndex < prevIndex &&
+          !isReassignment
+        ) {
+          return prev;
+        }
+
+        return {
+          ...prev,
+          status: data.status ?? prev.status,
+          ...(data.arrivedAt ? { arrivedAt: data.arrivedAt } : {}),
+          ...(isReassignment ? { isReassigned: true } : {}),
+        };
+      });
+
+      if (isReassignment) {
+        if (hasNavigated.current) return;
+
+        hasNavigated.current = true;
+
+        Alert.alert(
+          'Re-assigning',
+          'The previous partner cancelled. Searching for a new partner.',
+          [
+            {
+              text: 'OK',
+              onPress: () => {
+                router.replace(`/finding-driver?rideId=${rideId}`);
+              },
+            },
+          ]
+        );
+      }
     };
 
+
     const onStarted = (data: any) => {
-      if (data?.rideId && data.rideId !== rideId) return;
-      setRide((prev) =>
-        prev
-          ? { ...prev, status: data?.status ?? prev.status, startedAt: data?.startedAt ?? prev.startedAt }
-          : prev
-      );
+      if (!data || !data.rideId || data.rideId !== rideId) return;
+      setRide((prev) => {
+        if (!prev) return prev;
+        if (prev.status === 'completed' || prev.status === 'cancelled') return prev; // Do not exit terminal states
+
+        const order = ['pending', 'accepted', 'en_route_pickup', 'arrived', 'en_route_dropoff', 'completed', 'cancelled'];
+        const currentIdx = order.indexOf(prev.status ?? '');
+        const newIdx = order.indexOf(data.status ?? 'en_route_dropoff');
+        if (currentIdx !== -1 && newIdx !== -1 && newIdx < currentIdx) {
+          return prev;
+        }
+        return {
+          ...prev,
+          status: data.status ?? prev.status,
+          ...(data.startedAt ? { startedAt: data.startedAt } : null),
+        };
+      });
     };
 
     const onError = (data: { code: string; rideId?: string }) => {
@@ -322,6 +455,7 @@ export default function PackageTransitScreen() {
     socketService.on('ride_status_updated', onStatus);
     socketService.on('ride_started', onStarted);
     socketService.on('ride_completed', onCompleted);
+    socketService.on('ride_cancelled', onCancelled);
     socketService.on('ride_error', onError);
     socketService.on('driver_location', onDriverLocation);
 
@@ -330,6 +464,7 @@ export default function PackageTransitScreen() {
       socketService.off('ride_status_updated', onStatus);
       socketService.off('ride_started', onStarted);
       socketService.off('ride_completed', onCompleted);
+      socketService.off('ride_cancelled', onCancelled);
       socketService.off('ride_error', onError);
       socketService.off('driver_location', onDriverLocation);
     };

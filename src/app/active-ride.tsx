@@ -1,6 +1,6 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import * as Linking from 'expo-linking';
 import SharedHeader from '../components/SharedHeader';
@@ -26,8 +26,8 @@ type RideData = {
   type?: string;
   otp?: string | null;
   vehicleType?: string;
-  pickup?: { address?: string } | null;
-  dropoff?: { address?: string } | null;
+  pickup?: { address?: string; lat?: number; lng?: number } | null;
+  dropoff?: { address?: string; lat?: number; lng?: number } | null;
   price?: number | string | null;
   startedAt?: string;
   partner?: {
@@ -128,39 +128,112 @@ export default function ActiveRideScreen() {
     return () => { cancelled = true; };
   }, [ride?.status, pickupCoords, dropoffCoords, driverKey]);
 
+  const hasNavigated = useRef(false);
+
   useEffect(() => {
+    if (hasNavigated.current) return;
     if (ride?.status === 'completed') {
+      hasNavigated.current = true;
       if (ride.type === 'parcel') {
         router.replace(`/package-delivered?rideId=${rideId}`);
       } else {
         router.replace(`/ride-completed?rideId=${rideId}`);
+      }
+    } else if (ride?.status === 'cancelled') {
+      hasNavigated.current = true;
+      Alert.alert('Ride Cancelled', 'This ride has been cancelled.', [
+        { text: 'OK', onPress: () => router.replace('/(tabs)/home') }
+      ]);
+    } else if (ride?.status === 'pending') {
+      hasNavigated.current = true;
+      const navigateToFinding = () => {
+        const params = new URLSearchParams({
+          rideId: rideId || '',
+          vehicle: ride.vehicleType || vehicle || '',
+          pLat: ride.pickup?.lat?.toString() || '',
+          pLng: ride.pickup?.lng?.toString() || '',
+          pickup: ride.pickup?.address || '',
+          dropoff: ride.dropoff?.address || '',
+          price: ride.price?.toString() || '',
+        }).toString();
+        router.replace(`/finding-driver?${params}`);
+      };
+
+      if ((ride as any).isReassigned) {
+        Alert.alert('Finding New Driver', 'The previous partner cancelled. Searching for a new partner.', [
+          { text: 'OK', onPress: navigateToFinding }
+        ]);
+      } else {
+        navigateToFinding();
       }
     }
   }, [ride?.status, ride?.type, rideId, router]);
 
   useEffect(() => {
     socketService.connect();
-    socketService.emit('join_ride', { rideId, role: 'customer', userId: user?.id });
+    if (rideId) {
+      socketService.joinRide(rideId, 'customer', user?.id);
+    }
 
     const handleDetails = (data: RideData | null) => {
       if (!data) {
         setUnavailable(true);
         return;
       }
-      setRide(data);
+      if (data.id !== rideId) return; // Ignore stale snapshot, don't crash the active one
+
+      setRide((prev) => {
+        if (
+          prev?.status === 'completed' ||
+          prev?.status === 'cancelled'
+        ) {
+          return prev;
+        }
+
+        return data;
+      });
       setHasUnread(getUnread(data.id));
     };
 
-    const handleCompleted = () => {
+    const handleCompleted = (data: any) => {
+      if (!data || !data.id || data.id !== rideId) return;
       setRide((prev) => (prev ? { ...prev, status: 'completed' } : prev));
     };
 
+    const handleCancelled = (data: { rideId: string; reason: string }) => {
+      if (!data || !data.rideId || data.rideId !== rideId) return;
+      setRide((prev) => (prev ? { ...prev, status: 'cancelled' } : prev));
+    };
+
     const handleStatus = (data: { rideId: string; status: string }) => {
-      setRide((prev) => (prev ? { ...prev, status: data.status } : prev));
+      if (!data || !data.rideId || data.rideId !== rideId) return;
+
+      setRide((prev) => {
+        if (!prev) return prev;
+        if (prev.status === 'completed' || prev.status === 'cancelled') return prev; // Do not exit terminal states
+
+        const order = ['pending', 'accepted', 'en_route_pickup', 'arrived', 'en_route_dropoff', 'completed', 'cancelled'];
+        const currentIdx = order.indexOf(prev.status);
+        const newIdx = order.indexOf(data.status);
+
+        const isReassignment = data.status === 'pending' && currentIdx > 0;
+        if (currentIdx !== -1 && newIdx !== -1 && newIdx < currentIdx && !isReassignment) {
+          return prev; // Ignore older status
+        }
+        return { ...prev, status: data.status, ...(isReassignment ? { isReassigned: true } : null) };
+      });
     };
 
     const handleStarted = (data: { rideId: string; status: string; startedAt?: string }) => {
-      setRide((prev) => (prev ? { ...prev, status: data.status, startedAt: data.startedAt } : prev));
+      if (!data || !data.rideId || data.rideId !== rideId) return;
+      setRide((prev) => {
+        if (!prev) return prev;
+        if (prev.status === 'completed' || prev.status === 'cancelled') return prev; // Do not exit terminal states
+        // Prevent backward transition
+        const order = ['pending', 'accepted', 'en_route_pickup', 'arrived', 'en_route_dropoff', 'completed', 'cancelled'];
+        if (order.indexOf(prev.status) > order.indexOf(data.status)) return prev;
+        return { ...prev, status: data.status, startedAt: data.startedAt };
+      });
     };
 
     const handleIncoming = (data: any) => {
@@ -204,6 +277,7 @@ export default function ActiveRideScreen() {
 
     socketService.on('ride_details', handleDetails);
     socketService.on('ride_completed', handleCompleted);
+    socketService.on('ride_cancelled', handleCancelled);
     socketService.on('ride_status_updated', handleStatus);
     socketService.on('ride_started', handleStarted);
     socketService.on('receive_message', handleIncoming);
@@ -213,6 +287,7 @@ export default function ActiveRideScreen() {
     return () => {
       socketService.off('ride_details', handleDetails);
       socketService.off('ride_completed', handleCompleted);
+      socketService.off('ride_cancelled', handleCancelled);
       socketService.off('ride_status_updated', handleStatus);
       socketService.off('ride_started', handleStarted);
       socketService.off('receive_message', handleIncoming);
@@ -248,7 +323,7 @@ export default function ActiveRideScreen() {
 
   const callPartner = () => {
     const url = telLink(ride?.partner?.phone);
-    if (url) Linking.openURL(url).catch(() => {});
+    if (url) Linking.openURL(url).catch(() => { });
   };
 
   const openChat = () => {
@@ -267,13 +342,13 @@ export default function ActiveRideScreen() {
 
   const getStatusLabel = (r: RideData) => {
     if (r.type === 'parcel') {
-       if (r.status === 'pending') return 'Finding a delivery partner';
-       if (r.status === 'accepted' || r.status === 'en_route_pickup') return 'Partner on the way to pick up package';
-       if (r.status === 'arrived') return 'Partner arrived for pickup';
-       if (r.status === 'en_route_dropoff') return 'Package in transit to receiver';
-       if (r.status === 'completed') return 'Package delivered';
-       if (r.status === 'cancelled') return 'Delivery cancelled';
-       return 'Delivery in progress';
+      if (r.status === 'pending') return 'Finding a delivery partner';
+      if (r.status === 'accepted' || r.status === 'en_route_pickup') return 'Partner on the way to pick up package';
+      if (r.status === 'arrived') return 'Partner arrived for pickup';
+      if (r.status === 'en_route_dropoff') return 'Package in transit to receiver';
+      if (r.status === 'completed') return 'Package delivered';
+      if (r.status === 'cancelled') return 'Delivery cancelled';
+      return 'Delivery in progress';
     }
     return STATUS_LABELS[r.status] || 'Ride in progress';
   };
@@ -282,8 +357,8 @@ export default function ActiveRideScreen() {
   const progress = ride
     ? ride.status === 'pending' || ride.status === 'accepted' || ride.status === 'en_route_pickup' ? 20
       : ride.status === 'arrived' ? 50
-      : ride.status === 'en_route_dropoff' ? 75
-      : 100
+        : ride.status === 'en_route_dropoff' ? 75
+          : 100
     : 0;
 
   const pins: LivePin[] = useMemo(() => {
@@ -381,11 +456,11 @@ export default function ActiveRideScreen() {
                 </View>
                 <Text style={styles.otpCardDigits}>{ride.otp.split('').join('  ')}</Text>
                 <Text style={styles.otpCardHint}>
-                  {ride?.type === 'parcel' 
+                  {ride?.type === 'parcel'
                     ? (ride?.status === 'arrived' ? 'Your driver is here. Share this PIN to hand over the package.' : 'Share this PIN with your driver to hand over the package.')
                     : (ride?.status === 'arrived'
-                    ? 'Your driver is here at pickup. Share this PIN to start the trip.'
-                    : 'Share this PIN with your driver at pickup to start the trip.')}
+                      ? 'Your driver is here at pickup. Share this PIN to start the trip.'
+                      : 'Share this PIN with your driver at pickup to start the trip.')}
                 </Text>
               </View>
             ) : null}

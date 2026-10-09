@@ -18,6 +18,7 @@ export type MapMarker = {
   longitude: number;
   color?: string; // Hex color or basic string like 'red', 'green'
   vehicleType?: string;
+  title?: string;
 };
 
 export const CHENNAI_REGION: MapRegion = {
@@ -266,6 +267,46 @@ export default function RealMap({
         50% { transform: skewX(-50deg) scaleX(0.7); opacity: 0.4; }
       }
 
+      .custom-popup .mapboxgl-popup-content {
+        border-radius: 8px;
+        padding: 4px 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      }
+      .custom-popup .mapboxgl-popup-tip {
+        border-top-color: white;
+      }
+
+      .custom-title-marker {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        transform-origin: bottom center;
+        z-index: 2;
+      }
+      .title-marker-label {
+        color: white;
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 13px;
+        font-weight: bold;
+        font-family: sans-serif;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+        margin-bottom: -4px;
+        white-space: nowrap;
+        position: relative;
+        z-index: 2;
+      }
+      .title-marker-pin {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 2.5px solid white;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        margin: 0 auto;
+        position: relative;
+        z-index: 1;
+      }
+
       .pulse-marker {
         width: 32px;
         height: 32px;
@@ -391,6 +432,27 @@ export default function RealMap({
                 .setLngLat([m.longitude, m.latitude])
                 .addTo(map);
               window.currentMarkers[m.id] = vMarker;
+            } else if (m.title) {
+              var el = document.createElement('div');
+              el.className = 'custom-title-marker';
+              el.style.display = 'block';
+              
+              var label = document.createElement('div');
+              label.innerText = m.title;
+              label.className = 'title-marker-label';
+              label.style.backgroundColor = m.color || '#333';
+              
+              var pin = document.createElement('div');
+              pin.className = 'title-marker-pin';
+              pin.style.backgroundColor = m.color || '#333';
+              
+              el.appendChild(label);
+              el.appendChild(pin);
+              
+              var cMarker = new mapboxgl.Marker({ element: el, anchor: 'bottom' })
+                .setLngLat([m.longitude, m.latitude])
+                .addTo(map);
+              window.currentMarkers[m.id] = cMarker;
             } else {
               var cMarker = new mapboxgl.Marker({ color: m.color || '#000000' })
                 .setLngLat([m.longitude, m.latitude])
@@ -439,7 +501,7 @@ export default function RealMap({
     <View style={[styles.container, { backgroundColor: theme.base }, style]}>
       <WebView
         ref={webViewRef}
-        key={isDark ? 'dark' : 'light'}
+        key={isDark ? 'dark_v3' : 'light_v3'}
         source={{ html: htmlContent, baseUrl: 'https://localhost/' }}
         style={StyleSheet.absoluteFill}
         showsHorizontalScrollIndicator={false}

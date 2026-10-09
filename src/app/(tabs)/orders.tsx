@@ -73,7 +73,7 @@ const getRideImage = (order: HistoryRide) => {
   if (vType === 'premium_car' || vType.includes('premium') || vType.includes('taxi')) return require('../../../assets/images/premium_car.png');
   if (vType === 'car' || vType.includes('economic') || vType.includes('sedan')) return require('../../../assets/images/car.png');
   
-  return require('../../../assets/images/bike.png');
+  return require('../../../assets/images/bike.jpg');
 };
 
 export default function OrdersScreen() {

@@ -1,6 +1,6 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
@@ -61,7 +61,11 @@ export default function PackageVehicleScreen() {
   const [selectedVehicleId, setSelectedVehicleId] = useState('two-wheeler');
   const [notes, setNotes] = useState('');
   const [fareConfigs, setFareConfigs] = useState<any>(null);
-  const pendingRideRef = useRef<((data: any) => void) | null>(null);
+  const [isRequesting, setIsRequesting] = useState(false);
+  const isRequestingRef = useRef(false);
+  const fallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handlersRef = useRef<{ onRequested?: (d: any) => void, onError?: (d: any) => void }>({});
+  const idempotencyKeyRef = useRef<string>(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
   const [routeCoords, setRouteCoords] = useState<[number, number][]>([]);
 
   useEffect(() => {
@@ -100,23 +104,73 @@ export default function PackageVehicleScreen() {
     fetchRoute();
   }, [pickupLat, pickupLng, dropoffLat, dropoffLng]);
 
-  useEffect(() => {
-    socketService.connect();
-    const onRideRequested = (data: any) => {
-      if (pendingRideRef.current) {
-        pendingRideRef.current(data);
-        pendingRideRef.current = null;
-      }
-    };
-    socketService.on('ride_requested', onRideRequested);
-    return () => socketService.off('ride_requested', onRideRequested);
-  }, []);
-
   const vehicle = dynamicVehicles.find((v: any) => v.id === selectedVehicleId) || dynamicVehicles[0];
   const isTwoWheeler = selectedVehicleId === 'two-wheeler';
 
+  // Clean up any pending requests on unmount
+  useEffect(() => {
+    return () => {
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+      }
+      if (handlersRef.current.onRequested) {
+        socketService.off('ride_requested', handlersRef.current.onRequested);
+      }
+      if (handlersRef.current.onError) {
+        socketService.off('ride_error', handlersRef.current.onError);
+      }
+    };
+  }, []);
+
   const requestParcel = () => {
+    if (isRequestingRef.current) return;
+    isRequestingRef.current = true;
+    setIsRequesting(true);
+
+    const cleanup = () => {
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+      isRequestingRef.current = false;
+      setIsRequesting(false);
+      socketService.off('ride_requested', onRideRequested);
+      socketService.off('ride_error', onRideError);
+    };
+
+    const onRideRequested = (data: any) => {
+      cleanup();
+      if (!data?.id) {
+        Alert.alert('Error', 'Invalid response from server. Please try again.');
+        return;
+      }
+      const otp = data?.otp ? String(data.otp) : '';
+      router.push(`/package-assigned?rideId=${String(data.id)}&otp=${otp}`);
+    };
+
+    const onRideError = (data: any) => {
+      cleanup();
+      Alert.alert('Request Failed', data?.message || 'Could not request delivery. Please try again.');
+    };
+
+    handlersRef.current = { onRequested: onRideRequested, onError: onRideError };
+
+    socketService.on('ride_requested', onRideRequested);
+    socketService.on('ride_error', onRideError);
+
+    // Start fallback timer *before* emit so there's no gap
+    fallbackTimeoutRef.current = setTimeout(() => {
+      // Remove this attempt's listeners and timer before allowing a retry.
+      cleanup();
+
+      Alert.alert(
+        'Connection Delayed',
+        'No response was received. You can retry the request.'
+      );
+    }, 15000);
+
     socketService.emit('request_ride', {
+      idempotencyKey: idempotencyKeyRef.current,
       type: 'parcel',
       customerId: user?.id,
       vehicle: vehicle.name,
@@ -133,14 +187,6 @@ export default function PackageVehicleScreen() {
         notes
       }
     });
-
-    const fallback = setTimeout(() => router.push('/package-assigned'), 8000);
-    pendingRideRef.current = (data: any) => {
-      clearTimeout(fallback);
-      const id = data?.id ? String(data.id) : '';
-      const otp = data?.otp ? String(data.otp) : '';
-      router.push(`/package-assigned?rideId=${id}&otp=${otp}`);
-    };
   };
 
   const appendInstruction = (text: string) => {
@@ -155,12 +201,12 @@ export default function PackageVehicleScreen() {
       <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
         {/* Map Preview */}
         <View style={{ height: 180, borderRadius: 16, overflow: 'hidden', marginHorizontal: 20, marginTop: 16 }}>
-          <RealMap 
+          <RealMap
             interactive={false}
             style={{ width: '100%', height: '100%' }}
             markers={[
-              { id: 'pickup', latitude: pickupLat, longitude: pickupLng, color: mapTheme.routeDone },
-              { id: 'dropoff', latitude: dropoffLat, longitude: dropoffLng, color: mapTheme.success }
+              { id: 'pickup', latitude: pickupLat, longitude: pickupLng, color: mapTheme.routeDone, title: 'Pickup' },
+              { id: 'dropoff', latitude: dropoffLat, longitude: dropoffLng, color: mapTheme.success, title: 'Drop-off' }
             ]}
             routeCoordinates={routeCoords}
           />
@@ -237,7 +283,7 @@ export default function PackageVehicleScreen() {
                   <View style={styles.vehicleLeft}>
                     <View style={[styles.vehicleAvatarWrapper, isTwoWheeler ? styles.avatarScooter : styles.avatarAuto]}>
                       <Image
-                        source={v.id === 'two-wheeler' ? require('../../assets/images/bike.png') : require('../../assets/images/auto.png')}
+                        source={v.id === 'two-wheeler' ? require('../../assets/images/bike.jpg') : require('../../assets/images/auto.png')}
                         style={styles.vehicleImage}
                         resizeMode="contain"
                       />

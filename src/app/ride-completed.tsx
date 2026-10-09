@@ -9,7 +9,7 @@ import { fonts } from '../theme/typography';
 import { useAuth } from '../context/AuthContext';
 import { authedFetch } from '../utils/api';
 
-const API_BASE = 'http://192.168.1.34:4000';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
 
 const COMPLIMENTS = [
   { id: 'Smooth Driving', icon: '🌟' },

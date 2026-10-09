@@ -10,6 +10,7 @@ import {
   Animated,
   Easing,
   BackHandler,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -108,7 +109,10 @@ export default function FindingDriverScreen() {
   const router = useRouter();
   const { user } = useAuth();
   const { rideId, vehicle, pickup, dropoff, pLat, pLng, price } = useLocalSearchParams<{ rideId?: string, vehicle?: string, pickup?: string, dropoff?: string, pLat?: string, pLng?: string, price?: string }>();
-  const isCar = vehicle === 'car';
+  const vehicleName = vehicle === 'premium_car' ? 'Premium Car' : vehicle === 'auto' ? 'Ematix Auto' : vehicle === 'bike' ? 'Ematix Bike' : 'Economic Car';
+  const vehicleTypeName = vehicle === 'premium_car' ? 'a Premium Car' : vehicle === 'auto' ? 'an Auto' : vehicle === 'bike' ? 'a Bike' : 'a Car';
+  const vehiclePlural = vehicle === 'premium_car' ? 'premium cars' : vehicle === 'auto' ? 'autos' : vehicle === 'bike' ? 'bikes' : 'cars';
+  const vehicleIcon = vehicle === 'auto' ? 'electric-rickshaw' : vehicle === 'bike' ? 'two-wheeler' : 'local-taxi';
 
   const pLatNum = pLat ? parseFloat(pLat) : 13.0316; // CHENNAI_REGION fallback
   const pLngNum = pLng ? parseFloat(pLng) : 80.2341;
@@ -163,11 +167,24 @@ export default function FindingDriverScreen() {
         router.replace({ pathname: '/active-ride', params: { rideId: data.id, vehicle } });
       }
     };
+
+    const onCancelled = (data: any) => {
+      clearInterval(interval);
+      if (data.reason === 'timeout') {
+        Alert.alert('Timeout', 'No driver found within the time limit. The ride has been cancelled.');
+      } else {
+        Alert.alert('Ride Cancelled', 'The ride was cancelled.');
+      }
+      router.replace('/(tabs)/home');
+    };
+
     socketService.on('ride_accepted', onAccepted);
+    socketService.on('ride_cancelled', onCancelled);
 
     return () => {
       clearInterval(interval);
       socketService.off('ride_accepted', onAccepted);
+      socketService.off('ride_cancelled', onCancelled);
     };
   }, [router, rideId, user?.id]);
 
@@ -235,7 +252,7 @@ export default function FindingDriverScreen() {
               <Animated.View style={[styles.syncSpin, { transform: [{ rotate: spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] }) }] }]}>
                 <MaterialIcon name="sync" size={22} color={colors.primary} />
               </Animated.View>
-              <Text style={styles.sheetTitle}>Finding {isCar ? 'a Car' : 'an Auto'} near you...</Text>
+              <Text style={styles.sheetTitle}>Finding {vehicleTypeName} near you...</Text>
             </View>
             <Text style={styles.sheetSubtitle}>Matching with top-rated drivers within 1.5 km</Text>
           </View>
@@ -247,7 +264,7 @@ export default function FindingDriverScreen() {
                   <PingRing size={20} duration={1500} delay={0} color={colors.accentRed} />
                   <View style={styles.progressPulseDot} />
                 </View>
-                <Text style={styles.progressText}>Contacting 4 nearby {isCar ? 'cars' : 'autos'}...</Text>
+                <Text style={styles.progressText}>Contacting 4 nearby {vehiclePlural}...</Text>
               </View>
               <Text style={styles.timerText}>{formatTime(timer)}</Text>
             </View>
@@ -260,11 +277,11 @@ export default function FindingDriverScreen() {
             <View style={styles.detailsHeader}>
               <View style={styles.vehicleInfo}>
                 <View style={styles.vehicleIconWrapper}>
-                  <MaterialIcon name={isCar ? "local-taxi" : "electric-rickshaw"} size={28} color={colors.primary} />
+                  <MaterialIcon name={vehicleIcon} size={28} color={colors.primary} />
                 </View>
                 <View>
                   <View style={styles.vehicleTitleRow}>
-                    <Text style={styles.vehicleTitle}>{isCar ? 'Economic Car' : 'Ematix Auto'}</Text>
+                    <Text style={styles.vehicleTitle}>{vehicleName}</Text>
                     <View style={styles.ecoBadge}>
                       <Text style={styles.ecoBadgeText}>Eco</Text>
                     </View>
@@ -341,9 +358,7 @@ export default function FindingDriverScreen() {
                 activeOpacity={0.9}
                 onPress={() => {
                   setShowCancelModal(false);
-                  if (rideId) {
-                    socketService.emit('cancel_ride', { rideId });
-                  }
+                  socketService.emit('cancel_ride', { rideId });
                   if (router.canGoBack()) {
                     router.back();
                   } else {
@@ -417,9 +432,7 @@ export default function FindingDriverScreen() {
                 activeOpacity={0.9}
                 onPress={() => {
                   setShowTimeoutModal(false);
-                  if (rideId) {
-                    socketService.emit('cancel_ride', { rideId });
-                  }
+                  socketService.emit('cancel_ride', { rideId });
                   if (router.canGoBack()) {
                     router.back();
                   } else {

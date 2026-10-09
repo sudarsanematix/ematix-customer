@@ -46,7 +46,8 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://192.168.1.34:4000/api/auth/customer/send-otp', {
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+      const response = await fetch(`${API_BASE}/api/auth/customer/send-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone })
@@ -75,7 +76,8 @@ export default function LoginScreen() {
     setLoading(true);
 
     try {
-      const response = await fetch('http://192.168.1.34:4000/api/auth/customer/verify-otp', {
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+      const response = await fetch(`${API_BASE}/api/auth/customer/verify-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone, otp })

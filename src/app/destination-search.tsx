@@ -231,8 +231,8 @@ export default function DestinationSearchScreen() {
         style={StyleSheet.absoluteFill}
         region={pickupCoords && !destinationCoords ? { latitude: pickupCoords.latitude, longitude: pickupCoords.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : undefined}
         markers={[
-          ...(pickupCoords && (!isMapPicking || focusedField !== 'pickup') ? [{ id: 'pickup', latitude: pickupCoords.latitude, longitude: pickupCoords.longitude, color: mapTheme.routeDone }] : []),
-          ...(destinationCoords && (!isMapPicking || focusedField !== 'destination') ? [{ id: 'dropoff', latitude: destinationCoords.latitude, longitude: destinationCoords.longitude, color: mapTheme.success }] : [])
+          ...(pickupCoords && (!isMapPicking || focusedField !== 'pickup') ? [{ id: 'pickup', latitude: pickupCoords.latitude, longitude: pickupCoords.longitude, color: mapTheme.routeDone, title: 'Pickup' }] : []),
+          ...(destinationCoords && (!isMapPicking || focusedField !== 'destination') ? [{ id: 'dropoff', latitude: destinationCoords.latitude, longitude: destinationCoords.longitude, color: mapTheme.success, title: 'Drop-off' }] : [])
         ]}
         routeCoordinates={routeCoords}
         onRegionChange={(region) => {

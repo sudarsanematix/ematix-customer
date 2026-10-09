@@ -9,6 +9,7 @@ import {
   Image,
   Animated,
   Easing,
+  Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import Svg, { Defs, LinearGradient as SvgGradient, Stop, Path } from 'react-native-svg';
@@ -31,7 +32,7 @@ const calculateFare = (distKm: number, type: string, serverConfigs: any) => {
   const backendType = type;
 
   const config = serverConfigs && serverConfigs[backendType] ? serverConfigs[backendType] : null;
-  
+
   if (!config) {
     const c = (backendType === 'auto' ? { base: 45, perKm: 12, min: 60 } : { base: 25, perKm: 7, min: 30 });
     return Math.max(Math.round(c.base + (distKm * c.perKm)), c.min);
@@ -40,16 +41,16 @@ const calculateFare = (distKm: number, type: string, serverConfigs: any) => {
   const distance = Math.max(0, distKm);
   const base = config.baseFare || 0;
   const billable = Math.max(0, distance - (config.baseDistanceKm || 0));
-  
+
   const tier2Thresh = config.tier2DistanceThresholdKm || 999999;
   const baseDist = config.baseDistanceKm || 0;
-  
+
   const tier1Span = Math.max(0, Math.min(billable, tier2Thresh - baseDist));
   const tier2Span = Math.max(0, billable - tier1Span);
-  
+
   const tier1 = tier1Span * (config.perKmRate || 0);
   const tier2 = tier2Span * (config.tier2PerKmRate || 0);
-  
+
   const total = base + tier1 + tier2;
   return Math.max(Math.round(total), config.minFare || 0);
 };
@@ -146,9 +147,16 @@ export default function SelectRideScreen() {
   const styles = createStyles(colors, mapTheme);
   const router = useRouter();
   const { user } = useAuth();
-  const { 
-    vehicle, 
-    pickup: routePickup, 
+
+  const [isRequesting, setIsRequesting] = useState(false);
+  const isRequestingRef = useRef(false);
+  const fallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const handlersRef = useRef<{ onRequested?: (d: any) => void, onError?: (d: any) => void }>({});
+  const idempotencyKeyRef = useRef<string>(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+
+  const {
+    vehicle,
+    pickup: routePickup,
     destination: routeDestination,
     pickupLat,
     pickupLng,
@@ -188,7 +196,7 @@ export default function SelectRideScreen() {
 
   // Base calculation for dynamic prices
   const distKmVal = parsedDistance ? (parsedDistance / 1000) : 20;
-  
+
   const carPrice = calculateFare(distKmVal, 'car', fareConfigs);
   const premiumCarPrice = calculateFare(distKmVal, 'premium_car', fareConfigs);
   const autoPrice = calculateFare(distKmVal, 'auto', fareConfigs);
@@ -226,20 +234,69 @@ export default function SelectRideScreen() {
     fetchRoute();
   }, [pLat, pLng, dLat, dLng]);
 
+  // Clean up any pending requests on unmount
   useEffect(() => {
-    socketService.connect();
-    const onRideRequested = (data: any) => {
-      if (pendingRideRef.current) {
-        pendingRideRef.current(data);
-        pendingRideRef.current = null;
+    return () => {
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+      }
+      if (handlersRef.current.onRequested) {
+        socketService.off('ride_requested', handlersRef.current.onRequested);
+      }
+      if (handlersRef.current.onError) {
+        socketService.off('ride_error', handlersRef.current.onError);
       }
     };
-    socketService.on('ride_requested', onRideRequested);
-    return () => socketService.off('ride_requested', onRideRequested);
   }, []);
 
   const requestRide = () => {
+    if (isRequestingRef.current) return;
+    isRequestingRef.current = true;
+    setIsRequesting(true);
+
+    const cleanup = () => {
+      if (fallbackTimeoutRef.current) {
+        clearTimeout(fallbackTimeoutRef.current);
+        fallbackTimeoutRef.current = null;
+      }
+      isRequestingRef.current = false;
+      setIsRequesting(false);
+      socketService.off('ride_requested', onRideRequested);
+      socketService.off('ride_error', onRideError);
+    };
+
+    const onRideRequested = (data: any) => {
+      cleanup();
+      if (!data?.id) {
+        Alert.alert('Error', 'Invalid response from server. Please try again.');
+        return;
+      }
+      router.push({ pathname: '/finding-driver', params: { rideId: String(data.id), vehicle: selectedVehicleType, pickup, dropoff, pLat, pLng, price: selectedRide.price } });
+    };
+
+    const onRideError = (data: any) => {
+      cleanup();
+      Alert.alert('Request Failed', data?.message || 'Could not request ride. Please try again.');
+    };
+
+    handlersRef.current = { onRequested: onRideRequested, onError: onRideError };
+
+    socketService.on('ride_requested', onRideRequested);
+    socketService.on('ride_error', onRideError);
+
+    // Start fallback timer *before* emit so there's no gap
+    fallbackTimeoutRef.current = setTimeout(() => {
+      // Remove this attempt's listeners and timer before allowing a retry.
+      cleanup();
+
+      Alert.alert(
+        'Connection Delayed',
+        'No response was received. You can retry the request.'
+      );
+    }, 15000);
+
     socketService.emit('request_ride', {
+      idempotencyKey: idempotencyKeyRef.current,
       type: 'ride',
       customerId: user?.id,
       vehicle: selectedRide.name,
@@ -248,12 +305,6 @@ export default function SelectRideScreen() {
       dropoff: { address: dropoff, lat: dLat, lng: dLng },
       eta: selectedRide.time,
     });
-
-    const fallback = setTimeout(() => router.push({ pathname: '/finding-driver', params: { vehicle: selectedVehicleType, pickup, dropoff, pLat, pLng, price: selectedRide.price } }), 8000);
-    pendingRideRef.current = (data: any) => {
-      clearTimeout(fallback);
-      router.push({ pathname: '/finding-driver', params: { rideId: data?.id ? String(data.id) : '', vehicle: selectedVehicleType, pickup, dropoff, pLat, pLng, price: selectedRide.price } });
-    };
   };
 
   return (
@@ -262,13 +313,13 @@ export default function SelectRideScreen() {
 
       {/* Map Canvas with Overlays */}
       <View style={styles.mapContainer}>
-        <RealMap 
-          interactive 
+        <RealMap
+          interactive
           style={styles.mapImage}
           showUserLocation={true}
           markers={[
-            { id: 'pickup', latitude: pLat, longitude: pLng, color: mapTheme.routeDone },
-            { id: 'dropoff', latitude: dLat, longitude: dLng, color: mapTheme.success }
+            { id: 'pickup', latitude: pLat, longitude: pLng, color: mapTheme.routeDone, title: 'Pickup' },
+            { id: 'dropoff', latitude: dLat, longitude: dLng, color: mapTheme.success, title: 'Drop-off' }
           ]}
           routeCoordinates={routeCoords}
           mapPadding={{ top: 80, bottom: 420, left: 40, right: 40 }}

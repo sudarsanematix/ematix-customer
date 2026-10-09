@@ -213,8 +213,9 @@ export default function PackageDeliveredScreen() {
             <Image
               source={{
                 uri: ride?.proofOfDeliveryPhotoUrl
-                  ? `${API_BASE}${ride.proofOfDeliveryPhotoUrl}`
+                  ? `${API_BASE}/api/rides/${ride.id}/proof`
                   : 'https://images.unsplash.com/photo-1553413077-190dd305871c?w=200&h=200&fit=crop&q=80',
+                ...(ride?.proofOfDeliveryPhotoUrl ? { headers: { Authorization: `Bearer ${token}` } } : {})
               }}
               style={styles.proofImage}
             />

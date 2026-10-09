@@ -18,6 +18,7 @@ type RideData = {
   status?: string;
   otp?: string | null;
   price?: number | string | null;
+  vehicleType?: string;
   pickup?: { address?: string; lat?: number; lng?: number } | null;
   dropoff?: { address?: string; lat?: number; lng?: number } | null;
   packageDetails?: {
@@ -155,7 +156,31 @@ export default function PackageAssignedScreen() {
 
     const onStatus = (data: any) => {
       if (data?.rideId && data.rideId === rideIdRef.current) {
-        setRide((prev) => (prev ? { ...prev, status: data.status } : prev));
+        if (data.status === 'pending') {
+          Alert.alert('Re-assigning', 'The previous partner cancelled. Searching for a new partner.', [
+            { 
+              text: 'OK', 
+              onPress: () => {
+                setRide((prev) => {
+                  if (!prev) return prev;
+                  const params = new URLSearchParams({
+                    rideId: data.rideId,
+                    vehicle: prev.type === 'parcel' ? 'bike' : prev.vehicleType || '',
+                    pLat: prev.pickup?.lat?.toString() || '',
+                    pLng: prev.pickup?.lng?.toString() || '',
+                    pickup: prev.pickup?.address || '',
+                    dropoff: prev.dropoff?.address || '',
+                    price: prev.price?.toString() || '',
+                  }).toString();
+                  router.replace(`/finding-driver?${params}`);
+                  return { ...prev, status: data.status };
+                });
+              }
+            }
+          ]);
+        } else {
+          setRide((prev) => (prev ? { ...prev, status: data.status } : prev));
+        }
       }
     };
 
@@ -168,6 +193,12 @@ export default function PackageAssignedScreen() {
     const onCompleted = (data: any) => {
       if (data?.id && data.id !== rideIdRef.current) return;
       router.replace('/package-delivered');
+    };
+
+    const onCancelled = (data: any) => {
+      if (data?.rideId && data.rideId !== rideIdRef.current) return;
+      Alert.alert('Ride Cancelled', 'The delivery was cancelled by the partner.');
+      router.replace('/(tabs)/home');
     };
 
     const onError = (data: any) => {
@@ -192,6 +223,7 @@ export default function PackageAssignedScreen() {
     socketService.on('ride_status_updated', onStatus);
     socketService.on('ride_started', onStarted);
     socketService.on('ride_completed', onCompleted);
+    socketService.on('ride_cancelled', onCancelled);
     socketService.on('ride_error', onError);
     socketService.on('driver_location', onDriverLocation);
 
@@ -202,6 +234,7 @@ export default function PackageAssignedScreen() {
       socketService.off('ride_status_updated', onStatus);
       socketService.off('ride_started', onStarted);
       socketService.off('ride_completed', onCompleted);
+      socketService.off('ride_cancelled', onCancelled);
       socketService.off('ride_error', onError);
       socketService.off('driver_location', onDriverLocation);
     };

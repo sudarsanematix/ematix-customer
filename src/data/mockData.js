@@ -90,7 +90,7 @@ export const PARCEL_VEHICLES = [
     price: 79,
     baseFare: 40,
     distanceCharge: 39,
-    image: require('../../assets/images/bike.png'),
+    image: require('../../assets/images/bike.jpg'),
   },
   {
     id: 'auto',
@@ -112,7 +112,7 @@ export const DELIVERY_VEHICLES = [
     subtitle: 'Fastest delivery for light parcels',
     price: 79,
     eta: '12 mins',
-    image: require('../../assets/images/bike.png'),
+    image: require('../../assets/images/bike.jpg'),
   },
   {
     id: 'auto',

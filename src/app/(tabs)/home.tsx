@@ -662,7 +662,7 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     marginTop: 2,
   },
   locationText: { ...type.labelMd, color: colors.onSurfaceVariant },
-  notifWrap: { position: 'relative' },
+  notifWrap: { position: 'relative', marginRight: 8 },
   notifBtn: {
     width: 40,
     height: 40,

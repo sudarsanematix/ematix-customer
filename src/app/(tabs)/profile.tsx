@@ -646,7 +646,7 @@ export default function ProfileScreen() {
             </View>
           );
         })}
-        <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={() => showToast('Support request sent')}>
+        <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={() => { setSheet(null); router.push('/support'); }}>
           <Text style={styles.primaryBtnText}>Contact support</Text>
         </TouchableOpacity>
       </Sheet>
