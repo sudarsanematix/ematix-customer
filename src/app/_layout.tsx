@@ -26,6 +26,9 @@ if (Platform.OS === 'web') {
 }
 
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { initMapbox } from '../utils/mapbox';
+
+initMapbox();
 
 export default function RootLayout() {
   const [loaded, error] = useFonts({

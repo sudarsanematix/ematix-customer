@@ -1,5 +1,5 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useEffect, useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -133,6 +133,17 @@ export default function HomeScreen() {
   const [bootRegion, setBootRegion] = useState<{ latitude: number, longitude: number, latitudeDelta: number, longitudeDelta: number } | null>(null);
   const [addressName, setAddressName] = useState('Locating...');
   const [scrollEnabled, setScrollEnabled] = useState(true);
+  const scrollViewRef = useRef<ScrollView>(null);
+
+  const disableScroll = () => {
+    scrollViewRef.current?.setNativeProps({ scrollEnabled: false });
+    setScrollEnabled(false);
+  };
+
+  const enableScroll = () => {
+    scrollViewRef.current?.setNativeProps({ scrollEnabled: true });
+    setScrollEnabled(true);
+  };
 
   const [serviceType, setServiceType] = useState<ServiceType>('ride');
   const [vehicleChipKey, setVehicleChipKey] = useState<string>('car');
@@ -312,9 +323,11 @@ export default function HomeScreen() {
     <SafeAreaView style={styles.safeArea}>
       <SharedHeader currentScreen="home" />
       <ScrollView
+        ref={scrollViewRef}
         contentContainerStyle={styles.container}
         showsVerticalScrollIndicator={false}
         scrollEnabled={scrollEnabled}
+        nestedScrollEnabled={true}
       >
         {/* Greeting + location */}
         <View style={styles.greetingRow}>
@@ -416,6 +429,134 @@ export default function HomeScreen() {
           </View>
         </View>
 
+        {/* Live Vehicles Nearby */}
+        <View style={styles.radarCard}>
+          <View style={styles.radarHeader}>
+            <View>
+              <Text style={styles.radarTitle}>Live Vehicles Nearby</Text>
+              <Text style={styles.radarSubtitle}>
+                {filteredPartners.length} {activeChip.label}
+                {filteredPartners.length === 1 ? '' : 's'} active
+              </Text>
+            </View>
+            <View style={styles.liveBadge}>
+              <PulsingDot color={colors.primary} />
+              <Text style={styles.liveText}>Live Radar</Text>
+            </View>
+          </View>
+
+          {/* Segmented Controls */}
+          <View style={{ marginBottom: 12 }}>
+            <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 12, padding: 4, marginBottom: 8 }}>
+              {(['ride', 'parcel'] as ServiceType[]).map((service) => {
+                const isActive = serviceType === service;
+                return (
+                  <TouchableOpacity
+                    key={service}
+                    style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: isActive ? colors.primary : 'transparent' }}
+                    onPress={() => handleServiceChange(service)}
+                  >
+                    <Text style={{ fontWeight: '600', color: isActive ? colors.onPrimary : colors.onSurface }}>
+                      {service === 'ride' ? '🚗 Ride' : '📦 Parcel'}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              {chips.map((chip) => {
+                const isActive = activeChip.key === chip.key;
+
+                // Map the chip key to the proper local logo asset
+                let chipImage;
+                switch (chip.key) {
+                  case 'car':
+                    chipImage = require('../../../assets/images/economiccarlogo.png');
+                    break;
+                  case 'premium_car':
+                    chipImage = require('../../../assets/images/Premiumcarlogo.png');
+                    break;
+                  case 'auto':
+                    chipImage = require('../../../assets/images/Autologo.png');
+                    break;
+                  case 'bike':
+                    chipImage = require('../../../assets/images/Bikelogo.png');
+                    break;
+                  default:
+                    chipImage = require('../../../assets/images/economiccarlogo.png');
+                }
+
+                return (
+                  <TouchableOpacity
+                    key={chip.key}
+                    style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 2, alignItems: 'center', borderRadius: 12, borderWidth: 2, borderColor: isActive ? colors.primary : colors.outline, backgroundColor: isActive ? colors.primary + '11' : colors.surface }}
+                    onPress={() => setVehicleChipKey(chip.key)}
+                  >
+                    <Image source={chipImage} style={{ width: 40, height: 40, marginBottom: 8, resizeMode: 'contain' }} />
+                    <Text style={{ fontWeight: '600', fontSize: 12, textAlign: 'center', color: isActive ? colors.primary : colors.onSurfaceVariant }} numberOfLines={2}>{chip.label}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View
+            style={styles.mapBox}
+            onStartShouldSetResponderCapture={() => {
+              disableScroll();
+              return false;
+            }}
+            onMoveShouldSetResponderCapture={() => {
+              disableScroll();
+              return false;
+            }}
+            onTouchStart={disableScroll}
+            onTouchEnd={enableScroll}
+            onTouchCancel={enableScroll}
+          >
+            {bootRegion ? (
+              <RealMap
+                interactive
+                style={styles.mapImage}
+                region={myLocation ? { latitude: myLocation.latitude, longitude: myLocation.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : bootRegion}
+                markers={[
+                  ...(myLocation ? [{ id: 'me', latitude: myLocation.latitude, longitude: myLocation.longitude, color: isDark ? '#4C82FB' : '#0052FF' }] : []),
+                  ...filteredPartners.map(p => ({
+                    id: p.partnerId,
+                    latitude: p.lat ?? p.latitude,
+                    longitude: p.lng ?? p.longitude,
+                    vehicleType: p.vehicleType,
+                    color: markerColorFor(p.vehicleType)
+                  }))
+                ]}
+              />
+            ) : null}
+            <TouchableOpacity
+              style={{ position: 'absolute', bottom: 16, right: 16, backgroundColor: colors.surface, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 }}
+              activeOpacity={0.8}
+              onPress={locateMe}
+            >
+              <MaterialIcon name="my-location" size={24} color={colors.primary} />
+            </TouchableOpacity>
+            <View style={styles.mapOverlay} pointerEvents="none" />
+            {filteredPartners.length === 0 ? (
+              <View style={styles.mapEmpty} pointerEvents="none">
+                <MaterialIcon name="near-me" size={14} color={colors.onSurfaceVariant} />
+                <Text style={styles.mapEmptyText}>
+                  No {activeChip.label.toLowerCase()}s nearby right now
+                </Text>
+              </View>
+            ) : null}
+            <View style={styles.mapLegend}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendDot, { backgroundColor: markerColorFor(activeChip.kinds[0]) }]} />
+                <Text style={styles.legendText}>{activeChip.label}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
         {/* Ask Ematix AI card */}
         <View style={styles.aiCard}>
           <View style={styles.aiDecor} />
@@ -456,126 +597,6 @@ export default function HomeScreen() {
             <TouchableOpacity style={styles.aiSendBtn} activeOpacity={0.85}>
               <MaterialIcon name="arrow-upward" size={18} color={colors.onPrimary} />
             </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Live Vehicles Nearby */}
-        <View style={styles.radarCard}>
-          <View style={styles.radarHeader}>
-            <View>
-              <Text style={styles.radarTitle}>Live Vehicles Nearby</Text>
-              <Text style={styles.radarSubtitle}>
-                {filteredPartners.length} {activeChip.label}
-                {filteredPartners.length === 1 ? '' : 's'} active
-              </Text>
-            </View>
-            <View style={styles.liveBadge}>
-              <PulsingDot color={colors.primary} />
-              <Text style={styles.liveText}>Live Radar</Text>
-            </View>
-          </View>
-
-          {/* Segmented Controls */}
-          <View style={{ marginBottom: 12 }}>
-            <View style={{ flexDirection: 'row', backgroundColor: colors.surface, borderRadius: 12, padding: 4, marginBottom: 8 }}>
-              {(['ride', 'parcel'] as ServiceType[]).map((service) => {
-                const isActive = serviceType === service;
-                return (
-                  <TouchableOpacity
-                    key={service}
-                    style={{ flex: 1, paddingVertical: 8, alignItems: 'center', borderRadius: 8, backgroundColor: isActive ? colors.primary : 'transparent' }}
-                    onPress={() => handleServiceChange(service)}
-                  >
-                    <Text style={{ fontWeight: '600', color: isActive ? colors.onPrimary : colors.onSurface }}>
-                      {service === 'ride' ? '🚗 Ride' : '📦 Parcel'}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {chips.map((chip) => {
-                const isActive = activeChip.key === chip.key;
-                
-                // Map the chip key to the proper local logo asset
-                let chipImage;
-                switch (chip.key) {
-                  case 'car':
-                    chipImage = require('../../../assets/images/economiccarlogo.png');
-                    break;
-                  case 'premium_car':
-                    chipImage = require('../../../assets/images/Premiumcarlogo.png');
-                    break;
-                  case 'auto':
-                    chipImage = require('../../../assets/images/Autologo.png');
-                    break;
-                  case 'bike':
-                    chipImage = require('../../../assets/images/Bikelogo.png');
-                    break;
-                  default:
-                    chipImage = require('../../../assets/images/economiccarlogo.png');
-                }
-
-                return (
-                  <TouchableOpacity
-                    key={chip.key}
-                    style={{ flex: 1, paddingVertical: 12, paddingHorizontal: 2, alignItems: 'center', borderRadius: 12, borderWidth: 2, borderColor: isActive ? colors.primary : colors.outline, backgroundColor: isActive ? colors.primary + '11' : colors.surface }}
-                    onPress={() => setVehicleChipKey(chip.key)}
-                  >
-                    <Image source={chipImage} style={{ width: 40, height: 40, marginBottom: 8, resizeMode: 'contain' }} />
-                    <Text style={{ fontWeight: '600', fontSize: 12, textAlign: 'center', color: isActive ? colors.primary : colors.onSurfaceVariant }} numberOfLines={2}>{chip.label}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
-          <View
-            style={styles.mapBox}
-            onTouchStart={() => setScrollEnabled(false)}
-            onTouchEnd={() => setScrollEnabled(true)}
-            onTouchCancel={() => setScrollEnabled(true)}
-          >
-            {bootRegion ? (
-              <RealMap
-                interactive
-                style={styles.mapImage}
-                region={myLocation ? { latitude: myLocation.latitude, longitude: myLocation.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : bootRegion}
-                markers={[
-                  ...(myLocation ? [{ id: 'me', latitude: myLocation.latitude, longitude: myLocation.longitude, color: mapTheme.onBase }] : []),
-                  ...filteredPartners.map(p => ({
-                    id: p.partnerId,
-                    latitude: p.lat ?? p.latitude,
-                    longitude: p.lng ?? p.longitude,
-                    vehicleType: p.vehicleType,
-                    color: markerColorFor(p.vehicleType)
-                  }))
-                ]}
-              />
-            ) : null}
-            <TouchableOpacity
-              style={{ position: 'absolute', bottom: 16, right: 16, backgroundColor: colors.surface, width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4, elevation: 4 }}
-              activeOpacity={0.8}
-              onPress={locateMe}
-            >
-              <MaterialIcon name="my-location" size={24} color={colors.primary} />
-            </TouchableOpacity>
-            <View style={styles.mapOverlay} pointerEvents="none" />
-            {filteredPartners.length === 0 ? (
-              <View style={styles.mapEmpty} pointerEvents="none">
-                <MaterialIcon name="near-me" size={14} color={colors.onSurfaceVariant} />
-                <Text style={styles.mapEmptyText}>
-                  No {activeChip.label.toLowerCase()}s nearby right now
-                </Text>
-              </View>
-            ) : null}
-            <View style={styles.mapLegend}>
-              <View style={styles.legendItem}>
-                <View style={[styles.legendDot, { backgroundColor: markerColorFor(activeChip.kinds[0]) }]} />
-                <Text style={styles.legendText}>{activeChip.label}</Text>
-              </View>
-            </View>
           </View>
         </View>
 
@@ -928,7 +949,7 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
   },
   liveText: { ...type.labelSm, color: colors.primary, fontFamily: fonts.semibold },
   mapBox: {
-    height: 192,
+    height: 400,
     borderRadius: radius.lg,
     overflow: 'hidden',
     backgroundColor: colors.surfaceContainer,

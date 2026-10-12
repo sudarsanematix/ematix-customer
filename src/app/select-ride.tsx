@@ -11,7 +11,7 @@ import {
   Easing,
   Alert,
 } from 'react-native';
-import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
 import Svg, { Defs, LinearGradient as SvgGradient, Stop, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import SharedHeader from '../components/SharedHeader';
@@ -149,10 +149,21 @@ export default function SelectRideScreen() {
   const { user } = useAuth();
 
   const [isRequesting, setIsRequesting] = useState(false);
+  const [swipeResetKey, setSwipeResetKey] = useState(0);
   const isRequestingRef = useRef(false);
   const fallbackTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const handlersRef = useRef<{ onRequested?: (d: any) => void, onError?: (d: any) => void }>({});
   const idempotencyKeyRef = useRef<string>(Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15));
+
+  // Unlocks the request guard and remounts the swipe button so the thumb snaps
+  // back. Called only on failure/timeout/refocus — never on success, so a
+  // second swipe during the navigation transition cannot create a duplicate.
+  const rearmSwipe = React.useCallback(() => {
+    isRequestingRef.current = false;
+    setIsRequesting(false);
+    idempotencyKeyRef.current = Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+    setSwipeResetKey(k => k + 1);
+  }, []);
 
   const {
     vehicle,
@@ -249,33 +260,48 @@ export default function SelectRideScreen() {
     };
   }, []);
 
+  // Re-arm the swipe button whenever this screen regains focus (e.g. returning
+  // from finding-driver). The lock is only meant to cover the in-flight request
+  // plus the navigation transition, never to permanently disable the button.
+  useFocusEffect(
+    React.useCallback(() => {
+      rearmSwipe();
+    }, [rearmSwipe])
+  );
+
   const requestRide = () => {
     if (isRequestingRef.current) return;
     isRequestingRef.current = true;
     setIsRequesting(true);
 
-    const cleanup = () => {
+    // Detaches listeners and clears the fallback timer. Deliberately does NOT
+    // unlock `isRequestingRef`; unlocking is done only on failure/timeout so the
+    // guard stays held right through the navigation transition.
+    const cleanupListeners = () => {
       if (fallbackTimeoutRef.current) {
         clearTimeout(fallbackTimeoutRef.current);
         fallbackTimeoutRef.current = null;
       }
-      isRequestingRef.current = false;
-      setIsRequesting(false);
       socketService.off('ride_requested', onRideRequested);
       socketService.off('ride_error', onRideError);
     };
 
     const onRideRequested = (data: any) => {
-      cleanup();
+      cleanupListeners();
       if (!data?.id) {
+        rearmSwipe();
         Alert.alert('Error', 'Invalid response from server. Please try again.');
         return;
       }
+      // Success: keep the screen locked (isRequesting stays true) while we
+      // navigate, otherwise a second swipe during the transition would emit a
+      // duplicate ride.
       router.push({ pathname: '/finding-driver', params: { rideId: String(data.id), vehicle: selectedVehicleType, pickup, dropoff, pLat, pLng, price: selectedRide.price } });
     };
 
     const onRideError = (data: any) => {
-      cleanup();
+      cleanupListeners();
+      rearmSwipe();
       Alert.alert('Request Failed', data?.message || 'Could not request ride. Please try again.');
     };
 
@@ -287,7 +313,8 @@ export default function SelectRideScreen() {
     // Start fallback timer *before* emit so there's no gap
     fallbackTimeoutRef.current = setTimeout(() => {
       // Remove this attempt's listeners and timer before allowing a retry.
-      cleanup();
+      cleanupListeners();
+      rearmSwipe();
 
       Alert.alert(
         'Connection Delayed',
@@ -399,7 +426,9 @@ export default function SelectRideScreen() {
         {/* Swipe Button Pinned to Bottom */}
         <View style={styles.swipeWrap}>
           <SwipeButton
-            title="Slide To Send Request"
+            key={swipeResetKey}
+            title={isRequesting ? 'Sending Request...' : 'Slide To Send Request'}
+            disabled={isRequesting}
             onSwipeComplete={requestRide}
           />
         </View>

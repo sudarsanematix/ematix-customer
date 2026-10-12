@@ -588,6 +588,7 @@ export default function PackageTransitScreen() {
             follow={follow}
             route={routeProp}
             pins={pins}
+            mapPadding={{ top: 80, bottom: 380, left: 40, right: 40 }}
             onUserMove={() => setFollow(false)}
           >
             {/* Live Status Pill */}

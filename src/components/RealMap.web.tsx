@@ -38,6 +38,8 @@ const MAPBOX_TOKEN = process.env.EXPO_PUBLIC_MAPBOX_TOKEN;
 const NO_MARKERS: MapMarker[] = [];
 const NO_COORDINATES: [number, number][] = [];
 
+export type MapPadding = { top?: number; bottom?: number; left?: number; right?: number } | number;
+
 interface RealMapProps {
   style?: StyleProp<ViewStyle>;
   region?: MapRegion;
@@ -45,11 +47,12 @@ interface RealMapProps {
   markers?: MapMarker[];
   routeCoordinates?: [number, number][]; // [longitude, latitude][]
   showUserLocation?: boolean;
+  mapPadding?: MapPadding;
   children?: React.ReactNode;
   onRegionChange?: (region: { latitude: number, longitude: number }) => void;
 }
 
-export default function RealMap({ style, region = CHENNAI_REGION, interactive = false, markers = NO_MARKERS, routeCoordinates = NO_COORDINATES, showUserLocation = false, children, onRegionChange }: RealMapProps) {
+export default function RealMap({ style, region = CHENNAI_REGION, interactive = false, markers = NO_MARKERS, routeCoordinates = NO_COORDINATES, showUserLocation = false, mapPadding, children, onRegionChange }: RealMapProps) {
   const { isDark } = useTheme();
   const theme = useMemo(() => buildMapTheme(isDark), [isDark]);
   const iframeRef = React.useRef<HTMLIFrameElement>(null);
@@ -58,6 +61,7 @@ export default function RealMap({ style, region = CHENNAI_REGION, interactive = 
   const markersKey = JSON.stringify(markers);
   // Content-keyed, so callers can pass an inline array without a remount.
   const routeKey = JSON.stringify(routeCoordinates);
+  const paddingKey = JSON.stringify(mapPadding);
 
   const isIframeReady = React.useRef(false);
   const pendingMessages = React.useRef<any[]>([]);
@@ -75,52 +79,22 @@ export default function RealMap({ style, region = CHENNAI_REGION, interactive = 
   }, [markersKey]);
 
   React.useEffect(() => {
+    // Keep the boot region current so any future iframe remount starts at the
+    // latest known location instead of the stale initial (Chennai) default.
+    bootRegionRef.current = region;
     const zoom = Math.round(Math.log(360 / region.longitudeDelta) / Math.LN2) || 12;
     safePostMessage({ type: 'flyTo', latitude: region.latitude, longitude: region.longitude, zoom });
   }, [regionKey]);
 
+  React.useEffect(() => {
+    safePostMessage({ type: 'setMapPadding', padding: mapPadding ?? null });
+  }, [paddingKey]);
+
+  React.useEffect(() => {
+    safePostMessage({ type: 'renderRoute', coordinates: routeCoordinates });
+  }, [routeKey]);
+
   const htmlContent = useMemo(() => {
-
-    // Generate Route JS
-    let routeJs = '';
-    if (routeCoordinates && routeCoordinates.length > 0) {
-      routeJs = `
-        map.on('load', () => {
-          map.addSource('route', {
-            'type': 'geojson',
-            'data': {
-              'type': 'Feature',
-              'properties': {},
-              'geometry': {
-                'type': 'LineString',
-                'coordinates': ${JSON.stringify(routeCoordinates)}
-              }
-            }
-          });
-          map.addLayer({
-            'id': 'route',
-            'type': 'line',
-            'source': 'route',
-            'layout': {
-              'line-join': 'round',
-              'line-cap': 'round'
-            },
-            'paint': {
-              'line-color': '${theme.routeDone}',
-              'line-width': 4
-            }
-          });
-
-          // Automatically fit the map to the route bounds
-          const coordinates = ${JSON.stringify(routeCoordinates)};
-          const bounds = coordinates.reduce(function(bounds, coord) {
-            return bounds.extend(coord);
-          }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
-          
-          map.fitBounds(bounds, { padding: 50, duration: 800 });
-        });
-      `;
-    }
 
     const zoom = Math.round(Math.log(360 / bootRegionRef.current.longitudeDelta) / Math.LN2) || 12;
 
@@ -315,8 +289,63 @@ export default function RealMap({ style, region = CHENNAI_REGION, interactive = 
             window.renderMarkers(window.pendingMarkersData);
             window.pendingMarkersData = null;
          }
+         if (window.pendingRouteData) {
+            window.renderRoute(window.pendingRouteData);
+            window.pendingRouteData = null;
+         }
       });
-      
+
+      // Route and padding are pushed in instead of baked into srcDoc, so a
+      // route or layout change does not remount the iframe (which would reset
+      // the camera to the boot region).
+      window.currentMapPadding = window.currentMapPadding || 50;
+      window.setMapPadding = function(padding) {
+        window.currentMapPadding = (padding === null || padding === undefined) ? 50 : padding;
+      };
+
+      window.renderRoute = function(coordinates) {
+        if (typeof map === 'undefined' || !map.isStyleLoaded()) {
+          window.pendingRouteData = coordinates;
+          return;
+        }
+
+        if (map.getLayer('route')) { try { map.removeLayer('route'); } catch(e) {} }
+        if (map.getSource('route')) { try { map.removeSource('route'); } catch(e) {} }
+
+        if (!Array.isArray(coordinates) || coordinates.length === 0) return;
+
+        map.addSource('route', {
+          'type': 'geojson',
+          'data': {
+            'type': 'Feature',
+            'properties': {},
+            'geometry': {
+              'type': 'LineString',
+              'coordinates': coordinates
+            }
+          }
+        });
+        map.addLayer({
+          'id': 'route',
+          'type': 'line',
+          'source': 'route',
+          'layout': {
+            'line-join': 'round',
+            'line-cap': 'round'
+          },
+          'paint': {
+            'line-color': '${theme.routeDone}',
+            'line-width': 4
+          }
+        });
+
+        const bounds = coordinates.reduce(function(b, coord) {
+          return b.extend(coord);
+        }, new mapboxgl.LngLatBounds(coordinates[0], coordinates[0]));
+
+        map.fitBounds(bounds, { padding: window.currentMapPadding || 50, duration: 800 });
+      };
+
       window.addEventListener('message', (event) => {
         try {
           const data = JSON.parse(event.data);
@@ -331,15 +360,21 @@ export default function RealMap({ style, region = CHENNAI_REGION, interactive = 
           if (data.type === 'renderMarkers') {
             window.renderMarkers(data.markers);
           }
+          if (data.type === 'renderRoute') {
+            window.renderRoute(data.coordinates);
+          }
+          if (data.type === 'setMapPadding') {
+            window.setMapPadding(data.padding);
+          }
         } catch(e) {}
       });
-
-      ${routeJs}
       </script>
       </body>
       </html>
     `;
-  }, [interactive, routeKey, showUserLocation, theme]);
+    // Route and padding are pushed via postMessage, so a route or layout change
+    // no longer re-keys srcDoc and remounts the map.
+  }, [interactive, showUserLocation, theme]);
 
   React.useEffect(() => {
     if (typeof window !== 'undefined') {
@@ -367,12 +402,17 @@ export default function RealMap({ style, region = CHENNAI_REGION, interactive = 
         ref={iframeRef}
         onLoad={() => {
           isIframeReady.current = true;
-          if (iframeRef.current && iframeRef.current.contentWindow && pendingMessages.current.length > 0) {
-            pendingMessages.current.forEach(msg => {
-              iframeRef.current!.contentWindow!.postMessage(JSON.stringify(msg), '*');
-            });
-            pendingMessages.current = [];
-          }
+          if (!iframeRef.current || !iframeRef.current.contentWindow) return;
+          // Re-apply live state to the freshly-loaded iframe. The effects only
+          // fire on prop changes, so a remount (theme/interactive) would lose
+          // markers, route and padding without this replay.
+          pendingMessages.current.forEach(msg => {
+            iframeRef.current!.contentWindow!.postMessage(JSON.stringify(msg), '*');
+          });
+          pendingMessages.current = [];
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({ type: 'setMapPadding', padding: mapPadding ?? null }), '*');
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({ type: 'renderMarkers', markers }), '*');
+          iframeRef.current.contentWindow.postMessage(JSON.stringify({ type: 'renderRoute', coordinates: routeCoordinates }), '*');
         }}
         width="100%"
         height="100%"

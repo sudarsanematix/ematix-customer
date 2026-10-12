@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -14,20 +14,21 @@ import { fonts, radius, type } from '../theme/typography';
 interface SwipeButtonProps {
   onSwipeComplete: () => void;
   title?: string;
+  disabled?: boolean;
 }
 
-export default function SwipeButton({ onSwipeComplete, title = 'Slide To Send Request' }: SwipeButtonProps) {
+export default function SwipeButton({ onSwipeComplete, title = 'Slide To Send Request', disabled = false }: SwipeButtonProps) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
 
   const [containerWidth, setContainerWidth] = useState(0);
   const onSwipeCompleteRef = useRef(onSwipeComplete);
-  
-  React.useEffect(() => {
+
+  useEffect(() => {
     onSwipeCompleteRef.current = onSwipeComplete;
   }, [onSwipeComplete]);
 
-  const pan = useRef(new Animated.ValueXY()).current;
+  const pan = useState(() => new Animated.ValueXY())[0];
   const thumbWidth = 56;
   const padding = 6;
   const trackWidth = containerWidth - padding * 2;
@@ -35,41 +36,46 @@ export default function SwipeButton({ onSwipeComplete, title = 'Slide To Send Re
 
   const [isCompleted, setIsCompleted] = useState(false);
 
-  const panResponder = useRef(
-    PanResponder.create({
-      onStartShouldSetPanResponder: () => !isCompleted,
-      onMoveShouldSetPanResponder: () => !isCompleted,
-      onPanResponderGrant: () => {
-        pan.setOffset({ x: (pan.x as any)._value, y: 0 });
-        pan.setValue({ x: 0, y: 0 });
-      },
-      onPanResponderMove: Animated.event([null, { dx: pan.x }], {
-        useNativeDriver: false,
+  // Recreated whenever `disabled`, `isCompleted` or `maxTravel` change, so the
+  // handlers always see current values (no stale closure). `pan` is stable.
+  const panResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => !disabled && !isCompleted,
+        onMoveShouldSetPanResponder: () => !disabled && !isCompleted,
+        onPanResponderGrant: () => {
+          pan.setOffset({ x: (pan.x as any)._value, y: 0 });
+          pan.setValue({ x: 0, y: 0 });
+        },
+        onPanResponderMove: Animated.event([null, { dx: pan.x }], {
+          useNativeDriver: false,
+        }),
+        onPanResponderRelease: (e, gestureState) => {
+          pan.flattenOffset();
+
+          // If swiped more than 80% of the track, complete it exactly once.
+          if (gestureState.dx > maxTravel * 0.8) {
+            if (isCompleted) return;
+            setIsCompleted(true);
+            Animated.spring(pan, {
+              toValue: { x: maxTravel, y: 0 },
+              useNativeDriver: false,
+              bounciness: 0,
+            }).start(() => {
+              onSwipeCompleteRef.current();
+            });
+          } else {
+            // Snap back
+            Animated.spring(pan, {
+              toValue: { x: 0, y: 0 },
+              useNativeDriver: false,
+              bounciness: 10,
+            }).start();
+          }
+        },
       }),
-      onPanResponderRelease: (e, gestureState) => {
-        pan.flattenOffset();
-        
-        // If swiped more than 80% of the track, complete it
-        if (gestureState.dx > maxTravel * 0.8) {
-          setIsCompleted(true);
-          Animated.spring(pan, {
-            toValue: { x: maxTravel, y: 0 },
-            useNativeDriver: false,
-            bounciness: 0,
-          }).start(() => {
-            onSwipeCompleteRef.current();
-          });
-        } else {
-          // Snap back
-          Animated.spring(pan, {
-            toValue: { x: 0, y: 0 },
-            useNativeDriver: false,
-            bounciness: 10,
-          }).start();
-        }
-      },
-    })
-  ).current;
+    [disabled, isCompleted, maxTravel, pan]
+  );
 
   const handleLayout = (e: LayoutChangeEvent) => {
     setContainerWidth(e.nativeEvent.layout.width);
@@ -82,7 +88,7 @@ export default function SwipeButton({ onSwipeComplete, title = 'Slide To Send Re
   });
 
   return (
-    <View style={styles.container} onLayout={handleLayout}>
+    <View style={[styles.container, disabled && styles.containerDisabled]} onLayout={handleLayout}>
       <Text style={styles.titleText}>{title}</Text>
       {containerWidth > 0 && (
         <Animated.View
@@ -107,6 +113,9 @@ const createStyles = (colors: any) => StyleSheet.create({
     paddingHorizontal: 6,
     overflow: 'hidden',
     position: 'relative',
+  },
+  containerDisabled: {
+    opacity: 0.7,
   },
   titleText: {
     ...type.labelLg,

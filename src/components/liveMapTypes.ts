@@ -46,8 +46,14 @@ export type LiveMapCamera = {
   duration?: number;
 };
 
+export type LiveMapFitPadding =
+  | number
+  | [number, number, number, number]
+  | { top?: number; right?: number; bottom?: number; left?: number }
+  | { paddingTop?: number; paddingRight?: number; paddingBottom?: number; paddingLeft?: number };
+
 export type LiveMapFitOptions = {
-  padding?: number;
+  padding?: LiveMapFitPadding;
   duration?: number;
 };
 

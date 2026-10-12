@@ -359,11 +359,8 @@ export default function FindingDriverScreen() {
                 onPress={() => {
                   setShowCancelModal(false);
                   socketService.emit('cancel_ride', { rideId });
-                  if (router.canGoBack()) {
-                    router.back();
-                  } else {
-                    router.replace('/(tabs)/home');
-                  }
+                  router.dismissAll();
+                  router.replace('/(tabs)/home');
                 }}
               >
                 <Text style={styles.confirmCancelBtnText}>Yes, Cancel Ride</Text>
@@ -433,11 +430,8 @@ export default function FindingDriverScreen() {
                 onPress={() => {
                   setShowTimeoutModal(false);
                   socketService.emit('cancel_ride', { rideId });
-                  if (router.canGoBack()) {
-                    router.back();
-                  } else {
-                    router.replace('/(tabs)/home');
-                  }
+                  router.dismissAll();
+                  router.replace('/(tabs)/home');
                 }}
               >
                 <Text style={styles.confirmCancelBtnText}>Cancel Ride</Text>

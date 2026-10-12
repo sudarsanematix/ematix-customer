@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   ScrollView,
   TouchableOpacity,
   KeyboardAvoidingView,
+  Keyboard,
   Platform,
 } from 'react-native';
 import * as Location from 'expo-location';
@@ -99,6 +100,9 @@ export default function DestinationSearchScreen() {
   const [mapCenterCoords, setMapCenterCoords] = useState<{ latitude: number, longitude: number } | null>(null);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [fareConfigs, setFareConfigs] = useState<any>(null);
+
+  const pickupInputRef = useRef<TextInput>(null);
+  const destinationInputRef = useRef<TextInput>(null);
 
   const { user } = useAuth();
 
@@ -223,13 +227,19 @@ export default function DestinationSearchScreen() {
     return () => clearTimeout(timer);
   }, [pickup, destination, focusedField, myLocation]);
 
+  const mapRegion = useMemo(() => {
+    const center = pickupCoords ?? destinationCoords ?? myLocation;
+    if (!center) return undefined;
+    return { latitude: center.latitude, longitude: center.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 };
+  }, [pickupCoords, destinationCoords, myLocation]);
+
   return (
     <View style={styles.container}>
       {/* Background Map */}
       <RealMap
         interactive
         style={StyleSheet.absoluteFill}
-        region={pickupCoords && !destinationCoords ? { latitude: pickupCoords.latitude, longitude: pickupCoords.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 } : undefined}
+        region={mapRegion}
         markers={[
           ...(pickupCoords && (!isMapPicking || focusedField !== 'pickup') ? [{ id: 'pickup', latitude: pickupCoords.latitude, longitude: pickupCoords.longitude, color: mapTheme.routeDone, title: 'Pickup' }] : []),
           ...(destinationCoords && (!isMapPicking || focusedField !== 'destination') ? [{ id: 'dropoff', latitude: destinationCoords.latitude, longitude: destinationCoords.longitude, color: mapTheme.success, title: 'Drop-off' }] : [])
@@ -240,16 +250,24 @@ export default function DestinationSearchScreen() {
             setMapCenterCoords(region);
           }
         }}
-        mapPadding={isMapPicking ? { top: 0, bottom: 0, left: 0, right: 0 } : { top: 100, bottom: 650, left: 40, right: 40 }}
+        mapPadding={isMapPicking ? { top: 0, bottom: 0, left: 0, right: 0 } : { top: 80, bottom: 400, left: 40, right: 40 }}
       />
 
       {/* Floating Center Pin for the Map */}
       {isMapPicking && (
         <View style={styles.centerPinWrap} pointerEvents="none">
-          <View style={styles.centerPinIconWrap}>
-            <MaterialIcon name="place" size={28} color={focusedField === 'pickup' ? colors.primary : colors.accentRed} />
+          <View style={styles.centerPinLabelWrap}>
+            <View style={[styles.centerPinLabel, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]}>
+              <Text style={styles.centerPinLabelText} numberOfLines={1}>
+                {focusedField === 'pickup' ? 'Pickup location' : 'Drop-off location'}
+              </Text>
+            </View>
           </View>
-          <View style={styles.centerPinShadow} />
+          <View style={[styles.centerPinHead, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]}>
+            <View style={styles.centerPinDot} />
+          </View>
+          <View style={[styles.centerPinStem, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]} />
+          <View style={[styles.centerPinTip, { borderTopColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]} />
         </View>
       )}
 
@@ -313,6 +331,7 @@ export default function DestinationSearchScreen() {
             }}
           >
             <MaterialIcon name="my-location" size={24} color={colors.primary} />
+            <Text style={styles.locateBtnLabel}>Current Location</Text>
           </TouchableOpacity>
 
           {/* Sheet Handle */}
@@ -333,6 +352,7 @@ export default function DestinationSearchScreen() {
                 </View>
                 <View style={[styles.fieldBox, focusedField === 'pickup' && styles.fieldBoxActive]}>
                   <TextInput
+                    ref={pickupInputRef}
                     style={styles.destInput}
                     value={pickup}
                     onChangeText={(text) => {
@@ -373,6 +393,7 @@ export default function DestinationSearchScreen() {
                 </View>
                 <View style={[styles.fieldBox, focusedField === 'destination' && styles.fieldBoxActive]}>
                   <TextInput
+                    ref={destinationInputRef}
                     style={styles.destInput}
                     value={destination}
                     onChangeText={(text) => {
@@ -521,6 +542,9 @@ export default function DestinationSearchScreen() {
                   style={styles.listItem}
                   activeOpacity={0.7}
                   onPress={() => {
+                    Keyboard.dismiss();
+                    pickupInputRef.current?.blur();
+                    destinationInputRef.current?.blur();
                     setIsMapPicking(true);
                   }}
                 >
@@ -701,6 +725,7 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
   },
   keyboardView: {
     flex: 1,
+    zIndex: 10,
   },
   flexSpacer: {
     flex: 1,
@@ -748,31 +773,69 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     position: 'absolute',
     top: '50%',
     left: '50%',
-    marginLeft: -16,
-    marginTop: -36, // Offset exactly half of the pin's effective height so the tip touches the center
+    marginLeft: -13,
+    marginTop: -51, // Offset so the tip of the pin touches the exact center
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: 5,
   },
-  centerPinIconWrap: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: mapTheme.glass,
-    justifyContent: 'center',
+  centerPinLabelWrap: {
+    position: 'absolute',
+    bottom: '100%',
+    left: -120,
+    right: -120,
     alignItems: 'center',
+    marginBottom: 8,
+  },
+  centerPinLabel: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+    flexShrink: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.25,
     shadowRadius: 4,
     elevation: 4,
-    marginBottom: 4,
   },
-  centerPinShadow: {
-    width: 12,
-    height: 4,
-    borderRadius: 6,
-    backgroundColor: 'rgba(0,0,0,0.3)',
+  centerPinLabelText: {
+    ...type.labelSm,
+    color: '#fff',
+    fontFamily: fonts.semibold,
+  },
+  centerPinHead: {
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 6,
+  },
+  centerPinDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: '#fff',
+  },
+  centerPinStem: {
+    width: 3,
+    height: 18,
+    marginVertical: -1, // merge into head & tip so no gaps
+  },
+  centerPinTip: {
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderRightWidth: 5,
+    borderTopWidth: 9,
+    borderLeftColor: 'transparent',
+    borderRightColor: 'transparent',
   },
   sheetContainer: {
     backgroundColor: colors.surface,
@@ -791,17 +854,24 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     position: 'absolute',
     top: -56,
     right: spacing.marginMobile,
-    width: 44,
     height: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 14,
     borderRadius: 22,
     backgroundColor: colors.surface,
     justifyContent: 'center',
-    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
     elevation: 4,
+  },
+  locateBtnLabel: {
+    ...type.labelSm,
+    color: colors.primary,
+    fontFamily: fonts.semibold,
   },
   sheetHandleWrap: {
     width: '100%',
