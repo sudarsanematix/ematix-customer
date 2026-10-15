@@ -2,7 +2,7 @@ import { io, Socket } from 'socket.io-client';
 
 // Use the local IP address of your machine running the Node server.
 // For mobile devices/emulators to connect to your computer, we use your actual network IP:
-const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+const SOCKET_URL = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.35:4000';
 
 type PendingHandler = { event: string; callback: (data: any) => void };
 type PendingEmit = { event: string; data?: any };

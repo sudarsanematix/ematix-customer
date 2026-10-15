@@ -303,14 +303,6 @@ export default function ActiveRideScreen() {
     };
   });
 
-  const handleMapTap = () => {
-    if (ride?.type === 'parcel') {
-      router.replace(`/package-delivered?rideId=${rideId}`);
-    } else {
-      router.replace(`/ride-completed?rideId=${rideId}`);
-    }
-  };
-
   /**
    * Re-arms follow mode. The map engine turns follow off by itself as soon as
    * the user pans, so this has to re-enable it on both sides — otherwise the
@@ -397,7 +389,10 @@ export default function ActiveRideScreen() {
     <SafeAreaView style={styles.safeArea}>
       <SharedHeader currentScreen="active-ride" title="Active Ride Tracking" />
 
-      <ScrollView style={styles.container} contentContainerStyle={styles.content} bounces={false}>
+      {/* The map is a fixed sibling, NOT inside the ScrollView: a self-gesturing
+          native MapView nested in a ScrollView loses its pan/pinch gestures to
+          the parent's scroll interception (the page scrolls instead of the map). */}
+      <View style={styles.container}>
         {/* Live Map Viewport — real Mapbox canvas driven by the command bridge */}
         <View style={styles.mapContainer}>
           <LiveMap
@@ -408,13 +403,12 @@ export default function ActiveRideScreen() {
             follow={false}
             route={route}
             pins={pins}
-            onPress={handleMapTap}
             onUserMove={() => setFollow(false)}
             onError={(message) => console.warn('[LiveMap]', message)}
           >
 
             {/* Floating Top Trip Status Banner */}
-            <View style={styles.statusBanner}>
+            <View style={styles.statusBanner} pointerEvents="none">
               <View style={styles.statusInner}>
                 <View style={styles.statusLeft}>
                   <View style={styles.shieldIconWrapper}>
@@ -444,7 +438,7 @@ export default function ActiveRideScreen() {
         <View style={styles.bottomSheet}>
           <View style={styles.dragHandle} />
 
-          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetContent} nestedScrollEnabled>
+          <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.sheetContent}>
             {/* Trip Start PIN */}
             {ride?.otp && ride.status !== 'en_route_dropoff' && ride.status !== 'completed' ? (
               <View style={[styles.otpCard, ride?.status === 'arrived' ? styles.otpCardArrived : null]}>
@@ -592,7 +586,7 @@ export default function ActiveRideScreen() {
             </View>
           </ScrollView>
         </View>
-      </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -604,9 +598,6 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
   },
   container: {
     flex: 1,
-  },
-  content: {
-    paddingBottom: 24,
   },
   mapContainer: {
     height: 370,
@@ -756,6 +747,7 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     elevation: 4,
   },
   bottomSheet: {
+    flex: 1,
     backgroundColor: colors.surfaceContainerLowest,
     borderTopLeftRadius: 28,
     borderTopRightRadius: 28,
@@ -788,7 +780,7 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     gap: 6,
   },
   otpCardArrived: {
-    backgroundColor: colors.primaryContainer,
+    backgroundColor: colors.lightBlueTint,
   },
   otpCardTop: {
     flexDirection: 'row',

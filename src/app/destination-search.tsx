@@ -55,7 +55,7 @@ const calculateFare = (distKm: number, type: string, serverConfigs: any) => {
   const backendType = typeMap[type] || type;
 
   const config = serverConfigs && serverConfigs[backendType] ? serverConfigs[backendType] : null;
-  
+
   if (!config) {
     const c = (backendType === 'auto' ? { base: 45, perKm: 12, min: 60 } : { base: 25, perKm: 7, min: 30 });
     return Math.max(Math.round(c.base + (distKm * c.perKm)), c.min);
@@ -64,16 +64,16 @@ const calculateFare = (distKm: number, type: string, serverConfigs: any) => {
   const distance = Math.max(0, distKm);
   const base = config.baseFare || 0;
   const billable = Math.max(0, distance - (config.baseDistanceKm || 0));
-  
+
   const tier2Thresh = config.tier2DistanceThresholdKm || 999999;
   const baseDist = config.baseDistanceKm || 0;
-  
+
   const tier1Span = Math.max(0, Math.min(billable, tier2Thresh - baseDist));
   const tier2Span = Math.max(0, billable - tier1Span);
-  
+
   const tier1 = tier1Span * (config.perKmRate || 0);
   const tier2 = tier2Span * (config.tier2PerKmRate || 0);
-  
+
   const total = base + tier1 + tier2;
   return Math.max(Math.round(total), config.minFare || 0);
 };
@@ -100,6 +100,10 @@ export default function DestinationSearchScreen() {
   const [mapCenterCoords, setMapCenterCoords] = useState<{ latitude: number, longitude: number } | null>(null);
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [fareConfigs, setFareConfigs] = useState<any>(null);
+  const [bookingFor, setBookingFor] = useState<'me' | 'someone'>('me');
+  const [riderName, setRiderName] = useState('');
+  const [riderPhone, setRiderPhone] = useState('');
+  const [riderError, setRiderError] = useState('');
 
   const pickupInputRef = useRef<TextInput>(null);
   const destinationInputRef = useRef<TextInput>(null);
@@ -144,7 +148,7 @@ export default function DestinationSearchScreen() {
           const coords = { latitude: loc.coords.latitude, longitude: loc.coords.longitude };
           setMyLocation(coords);
           setPickupCoords(coords);
-          
+
           // Reverse geocode
           try {
             const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${coords.longitude},${coords.latitude}.json?access_token=${MAPBOX_TOKEN}`;
@@ -233,6 +237,20 @@ export default function DestinationSearchScreen() {
     return { latitude: center.latitude, longitude: center.longitude, latitudeDelta: 0.05, longitudeDelta: 0.05 };
   }, [pickupCoords, destinationCoords, myLocation]);
 
+  const handleBookingForChange = (mode: 'me' | 'someone') => {
+    setBookingFor(mode);
+    setRiderError('');
+    if (mode === 'someone' && (!pickup || pickup === 'Current Location' || pickup === 'Locating...')) {
+      // Booking for someone else means the pickup is their location, not the
+      // device GPS, so clear the auto-filled current location and ask for it.
+      setPickup('');
+      setPickupCoords(null);
+      setRouteCoords([]);
+      setShowConfirm(false);
+      setTimeout(() => pickupInputRef.current?.focus(), 100);
+    }
+  };
+
   return (
     <View style={styles.container}>
       {/* Background Map */}
@@ -251,36 +269,41 @@ export default function DestinationSearchScreen() {
           }
         }}
         mapPadding={isMapPicking ? { top: 0, bottom: 0, left: 0, right: 0 } : { top: 80, bottom: 400, left: 40, right: 40 }}
-      />
-
-      {/* Floating Center Pin for the Map */}
-      {isMapPicking && (
-        <View style={styles.centerPinWrap} pointerEvents="none">
-          <View style={styles.centerPinLabelWrap}>
-            <View style={[styles.centerPinLabel, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]}>
-              <Text style={styles.centerPinLabelText} numberOfLines={1}>
-                {focusedField === 'pickup' ? 'Pickup location' : 'Drop-off location'}
-              </Text>
+      >
+        {isMapPicking && (
+          <View
+            style={[
+              styles.centerPinWrap,
+              { top: bookingFor === 'someone' ? '25%' : '35%' },
+            ]}
+            pointerEvents="none"
+          >
+            <View style={styles.centerPinLabelWrap}>
+              <View style={[styles.centerPinLabel, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]}>
+                <Text style={styles.centerPinLabelText} numberOfLines={1}>
+                  {focusedField === 'pickup' ? 'Pickup location' : 'Drop-off location'}
+                </Text>
+              </View>
             </View>
+            <View style={[styles.centerPinHead, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]}>
+              <View style={styles.centerPinDot} />
+            </View>
+            <View style={[styles.centerPinStem, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]} />
+            <View style={[styles.centerPinTip, { borderTopColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]} />
           </View>
-          <View style={[styles.centerPinHead, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]}>
-            <View style={styles.centerPinDot} />
-          </View>
-          <View style={[styles.centerPinStem, { backgroundColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]} />
-          <View style={[styles.centerPinTip, { borderTopColor: focusedField === 'pickup' ? colors.primary : colors.accentRed }]} />
-        </View>
-      )}
+        )}
+      </RealMap>
 
-      <SharedHeader 
-        currentScreen="destination-search" 
-        title="Where to?" 
+      <SharedHeader
+        currentScreen="destination-search"
+        title="Where to?"
         onBackPress={() => {
           if (router.canGoBack()) {
             router.back();
           } else {
             router.replace('/(tabs)/home');
           }
-        }} 
+        }}
       />
 
       {/* Keyboard Avoiding Container for Bottom Sheet */}
@@ -315,7 +338,7 @@ export default function DestinationSearchScreen() {
                 }
               }
               setPickupCoords(currentCoords);
-              
+
               // Reverse geocode to get the real address
               try {
                 const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${currentCoords.longitude},${currentCoords.latitude}.json?access_token=${MAPBOX_TOKEN}`;
@@ -326,7 +349,7 @@ export default function DestinationSearchScreen() {
               } catch (e) {
                 setPickup('Current Location');
               }
-              
+
               if (focusedField === 'pickup') setFocusedField('destination');
             }}
           >
@@ -341,6 +364,26 @@ export default function DestinationSearchScreen() {
 
           {/* Search Inputs */}
           <View style={styles.searchSection}>
+            {vehicle !== 'parcel' && (
+              <View style={styles.bookingForRow}>
+                <TouchableOpacity
+                  style={[styles.bookingForSegment, bookingFor === 'me' && styles.bookingForSegmentActive]}
+                  activeOpacity={0.8}
+                  onPress={() => handleBookingForChange('me')}
+                >
+                  <MaterialIcon name="person" size={16} color={bookingFor === 'me' ? colors.onPrimary : colors.onSurfaceVariant} />
+                  <Text style={[styles.bookingForText, bookingFor === 'me' && styles.bookingForTextActive]}>For me</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.bookingForSegment, bookingFor === 'someone' && styles.bookingForSegmentActive]}
+                  activeOpacity={0.8}
+                  onPress={() => handleBookingForChange('someone')}
+                >
+                  <MaterialIcon name="group" size={16} color={bookingFor === 'someone' ? colors.onPrimary : colors.onSurfaceVariant} />
+                  <Text style={[styles.bookingForText, bookingFor === 'someone' && styles.bookingForTextActive]}>For someone else</Text>
+                </TouchableOpacity>
+              </View>
+            )}
             <View style={styles.inputStack}>
 
               {/* Pickup */}
@@ -426,6 +469,27 @@ export default function DestinationSearchScreen() {
               </View>
 
             </View>
+            {bookingFor === 'someone' && (
+              <View style={styles.riderFields}>
+                <TextInput
+                  style={styles.riderInput}
+                  value={riderName}
+                  onChangeText={(t) => { setRiderName(t); if (riderError) setRiderError(''); }}
+                  placeholder="Passenger name"
+                  placeholderTextColor={colors.textMuted}
+                />
+                <TextInput
+                  style={styles.riderInput}
+                  value={riderPhone}
+                  onChangeText={(t) => { setRiderPhone(t.replace(/[^0-9]/g, '')); if (riderError) setRiderError(''); }}
+                  placeholder="Passenger mobile number"
+                  placeholderTextColor={colors.textMuted}
+                  keyboardType="phone-pad"
+                  maxLength={15}
+                />
+                {riderError ? <Text style={styles.riderError}>{riderError}</Text> : null}
+              </View>
+            )}
           </View>
 
           {/* Conditionally Show Search Results or Confirm Button */}
@@ -434,7 +498,7 @@ export default function DestinationSearchScreen() {
               <Text style={{ fontSize: 14, color: colors.textMuted, textAlign: 'center', marginBottom: 16 }}>
                 Drag the map to move the pin
               </Text>
-              <TouchableOpacity 
+              <TouchableOpacity
                 style={{ backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 16, alignItems: 'center' }}
                 activeOpacity={0.8}
                 onPress={async () => {
@@ -511,7 +575,7 @@ export default function DestinationSearchScreen() {
                         // Final fallback to current location or default
                         lat = lat || (myLocation ? myLocation.latitude : 13.0450);
                         lng = lng || (myLocation ? myLocation.longitude : 80.2310);
-                        
+
                         if (focusedField === 'pickup') {
                           setPickup(chip.title);
                           setPickupCoords({ latitude: lat, longitude: lng });
@@ -580,7 +644,7 @@ export default function DestinationSearchScreen() {
                           setDestination(item.title);
                           setShowConfirm(true);
                         }
-                        
+
                         // Clear the suggestions list so the map is visible
                         setSearchResults([]);
 
@@ -685,6 +749,22 @@ export default function DestinationSearchScreen() {
                 style={{ backgroundColor: colors.primary, paddingVertical: 18, borderRadius: 16, alignItems: 'center', shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 12, elevation: 8 }}
                 activeOpacity={0.8}
                 onPress={() => {
+                  if (bookingFor === 'someone') {
+                    const name = riderName.trim();
+                    const phoneDigits = riderPhone.replace(/\D/g, '');
+                    if (!pickupCoords) {
+                      setRiderError('Please choose the pickup location for the passenger.');
+                      return;
+                    }
+                    if (!name) {
+                      setRiderError('Please enter the passenger name.');
+                      return;
+                    }
+                    if (phoneDigits.length < 10) {
+                      setRiderError('Please enter a valid 10-digit mobile number.');
+                      return;
+                    }
+                  }
                   const params = {
                     vehicle,
                     pickup,
@@ -699,7 +779,14 @@ export default function DestinationSearchScreen() {
                     dropoffLng: destinationCoords?.longitude,
                     dLng: destinationCoords?.longitude,
                     distance: routeDistance,
-                    duration: routeDuration
+                    duration: routeDuration,
+                    ...(bookingFor === 'someone'
+                      ? {
+                        bookedForOthers: '1',
+                        riderName: riderName.trim(),
+                        riderPhone: riderPhone.replace(/\D/g, ''),
+                      }
+                      : {}),
                   };
                   if (vehicle === 'parcel') {
                     router.push({ pathname: '/package-details', params: params as any });
@@ -771,7 +858,7 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
   },
   centerPinWrap: {
     position: 'absolute',
-    top: '50%',
+    top: '35%',
     left: '50%',
     marginLeft: -13,
     marginTop: -51, // Offset so the tip of the pin touches the exact center
@@ -888,6 +975,53 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
   searchSection: {
     paddingHorizontal: spacing.marginMobile,
     paddingBottom: spacing.stackLg,
+  },
+  bookingForRow: {
+    flexDirection: 'row',
+    gap: spacing.stackSm,
+    marginBottom: spacing.stackMd,
+  },
+  bookingForSegment: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 40,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.surfaceContainerHigh,
+    backgroundColor: colors.surfaceContainerLowest,
+  },
+  bookingForSegmentActive: {
+    backgroundColor: colors.primary,
+    borderColor: colors.primary,
+  },
+  bookingForText: {
+    ...type.labelSm,
+    color: colors.onSurfaceVariant,
+    fontFamily: fonts.semibold,
+  },
+  bookingForTextActive: {
+    color: colors.onPrimary,
+  },
+  riderFields: {
+    marginTop: spacing.stackMd,
+    gap: spacing.stackSm,
+  },
+  riderInput: {
+    height: 48,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.surfaceContainerHigh,
+    backgroundColor: colors.surface,
+    paddingHorizontal: 14,
+    ...type.bodyLg,
+    color: colors.onSurface,
+  },
+  riderError: {
+    ...type.bodySm,
+    color: colors.accentRed,
   },
   inputStack: {
     position: 'relative',

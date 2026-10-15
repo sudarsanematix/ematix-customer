@@ -174,12 +174,19 @@ export default function SelectRideScreen() {
     dropoffLat,
     dropoffLng,
     distance,
-    duration
+    duration,
+    bookedForOthers: routeBookedForOthers,
+    riderName: routeRiderName,
+    riderPhone: routeRiderPhone,
   } = useLocalSearchParams();
   const pendingRideRef = useRef<((data: any) => void) | null>(null);
 
   const pickup = typeof routePickup === 'string' ? routePickup : '';
   const dropoff = typeof routeDestination === 'string' ? routeDestination : '';
+
+  const isForSomeoneElse = routeBookedForOthers === '1';
+  const riderName = typeof routeRiderName === 'string' ? routeRiderName : '';
+  const riderPhone = typeof routeRiderPhone === 'string' ? routeRiderPhone : '';
 
   const pLat = pickupLat ? parseFloat(pickupLat as string) : 13.0450;
   const pLng = pickupLng ? parseFloat(pickupLng as string) : 80.2310;
@@ -296,7 +303,7 @@ export default function SelectRideScreen() {
       // Success: keep the screen locked (isRequesting stays true) while we
       // navigate, otherwise a second swipe during the transition would emit a
       // duplicate ride.
-      router.push({ pathname: '/finding-driver', params: { rideId: String(data.id), vehicle: selectedVehicleType, pickup, dropoff, pLat, pLng, price: selectedRide.price } });
+      router.push({ pathname: '/finding-driver', params: { rideId: String(data.id), vehicle: selectedVehicleType, pickup, dropoff, pLat, pLng, price: selectedRide.price, bookedForOthers: isForSomeoneElse ? '1' : '', riderName, riderPhone } });
     };
 
     const onRideError = (data: any) => {
@@ -331,6 +338,9 @@ export default function SelectRideScreen() {
       pickup: { address: pickup, lat: pLat, lng: pLng },
       dropoff: { address: dropoff, lat: dLat, lng: dLng },
       eta: selectedRide.time,
+      bookedForOthers: isForSomeoneElse,
+      riderName: isForSomeoneElse ? riderName : undefined,
+      riderPhone: isForSomeoneElse ? riderPhone : undefined,
     });
   };
 
@@ -378,6 +388,12 @@ export default function SelectRideScreen() {
           {/* Vehicle Title & Rating */}
           <View style={styles.vehicleInfo}>
             <Text style={styles.vehicleTitle}>{selectedRide.name}</Text>
+            {isForSomeoneElse && riderName ? (
+              <View style={styles.forSomeoneChip}>
+                <MaterialIcon name="group" size={14} color={colors.primary} />
+                <Text style={styles.forSomeoneText} numberOfLines={1}>For {riderName}</Text>
+              </View>
+            ) : null}
             <View style={styles.ratingRow}>
               {[1, 2, 3, 4, 5].map((star) => (
                 <MaterialIcon
@@ -548,6 +564,21 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
   vehicleTitle: {
     ...type.headlineMd,
     color: colors.onSurface,
+    fontFamily: fonts.semibold,
+  },
+  forSomeoneChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    marginTop: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceContainer,
+  },
+  forSomeoneText: {
+    ...type.labelSm,
+    color: colors.primary,
     fontFamily: fonts.semibold,
   },
   ratingRow: {

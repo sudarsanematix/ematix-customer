@@ -25,6 +25,8 @@ import { useAuth } from '../../context/AuthContext';
 import { socketService } from '../../utils/socket';
 import * as Location from 'expo-location';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { authedFetch } from '../../utils/api';
+import TypingIndicator from '../../components/TypingIndicator';
 
 function PingRing({ color, size }: { color: string; size: number }) {
   const { colors, isDark } = useTheme();
@@ -126,7 +128,7 @@ export default function HomeScreen() {
   const styles = createStyles(colors, mapTheme);
 
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [nearbyPartners, setNearbyPartners] = useState<any[]>([]);
   const [myLocation, setMyLocation] = useState<{ latitude: number, longitude: number } | null>(null);
@@ -134,6 +136,10 @@ export default function HomeScreen() {
   const [addressName, setAddressName] = useState('Locating...');
   const [scrollEnabled, setScrollEnabled] = useState(true);
   const scrollViewRef = useRef<ScrollView>(null);
+
+  const [aiInput, setAiInput] = useState('');
+  const [aiReply, setAiReply] = useState<string | null>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const disableScroll = () => {
     scrollViewRef.current?.setNativeProps({ scrollEnabled: false });
@@ -158,6 +164,11 @@ export default function HomeScreen() {
   };
 
   /** Keeps the chip's pin colour and the map markers on one source of truth. */
+  const AI_FALLBACK_REPLY =
+    "I can help plan trips, compare autos vs cabs, and send parcels. What would you like to do?";
+  const AI_OFFLINE_REPLY =
+    "I'm having trouble reaching the assistant right now. Please check your connection and try again.";
+
   const markerColorFor = (kind?: string) =>
     kind === 'bike' || kind === 'auto' || kind === 'parcel_bike' || kind === 'parcel_auto'
       ? mapTheme.success
@@ -318,6 +329,84 @@ export default function HomeScreen() {
       return kinds.includes(partner.vehicleType);
     });
   }, [nearbyPartners, activeChip]);
+
+  const parseBookingIntent = (text: string) => {
+    const t = text.toLowerCase().trim();
+    if (!t) return null;
+    const isRide = /\b(book|ride|cab|taxi|auto)\b/.test(t) && !/\b(parcel|package|send parcel)\b/.test(t);
+    const isParcel = /\b(parcel|package|send parcel|deliver)\b/.test(t);
+    if (!isRide && !isParcel) return null;
+
+    let vehicle: string | undefined;
+    if (/\b(premium|luxury)\b/.test(t)) vehicle = 'premium-car';
+    else if (/\b(cab|car)\b/.test(t) && !/\b(auto)\b/.test(t)) vehicle = 'prime-sedan';
+    else if (/\b(auto)\b/.test(t)) vehicle = 'auto';
+    else if (/\b(bike|two.?wheeler)\b/.test(t)) vehicle = 'two-wheeler';
+    else if (isParcel) vehicle = 'parcel';
+
+    // Try patterns: "from X to Y", "to Y from X"
+    let fromMatch = t.match(/\bfrom\b\s+(.+?)\s+\bto\b\s+(.+)/i);
+    if (fromMatch) {
+      return {
+        type: isParcel ? 'parcel' : 'ride',
+        vehicle: vehicle || (isParcel ? 'parcel' : undefined),
+        pickup: fromMatch[1].trim().replace(/\bnow\b.*$/i, '').trim(),
+        dropoff: fromMatch[2].trim().replace(/\bnow\b.*$/i, '').trim(),
+      };
+    }
+    // "to Y" (pickup defaults to current location/address if available)
+    let toMatch = t.match(/\bto\b\s+(.+)/i);
+    if (toMatch) {
+      const drop = toMatch[1].trim().replace(/\bnow\b.*$/i, '').trim();
+      return {
+        type: isParcel ? 'parcel' : 'ride',
+        vehicle: vehicle || (isParcel ? 'parcel' : undefined),
+        pickup: myLocation ? addressName || 'Current Location' : addressName || undefined,
+        dropoff: drop,
+      };
+    }
+    return null;
+  };
+
+  const sendAiMessage = async (raw?: string) => {
+    const text = (raw ?? aiInput).trim();
+    if (!text || aiLoading) return;
+
+    const intent = parseBookingIntent(text);
+    if (intent) {
+      const params: any = {
+        vehicle: intent.vehicle || (intent.type === 'parcel' ? 'parcel' : 'prime-sedan'),
+        pickup: intent.pickup || addressName || 'Current Location',
+        dropoff: intent.dropoff,
+      };
+      setAiLoading(true);
+      setAiInput('');
+      setAiReply(null);
+      try {
+        setTimeout(() => {
+          router.push({ pathname: '/destination-search', params });
+        }, 150);
+      } finally {
+        setAiLoading(false);
+      }
+      return;
+    }
+
+    setAiInput('');
+    setAiReply(null);
+    setAiLoading(true);
+    try {
+      const data = await authedFetch('/api/assistant/chat', token, {
+        method: 'POST',
+        body: { messages: [{ role: 'user', text }], context: addressName },
+      });
+      setAiReply(String(data?.reply || '').trim() || AI_FALLBACK_REPLY);
+    } catch (e) {
+      setAiReply(AI_OFFLINE_REPLY);
+    } finally {
+      setAiLoading(false);
+    }
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -575,26 +664,45 @@ export default function HomeScreen() {
             </View>
           </View>
           <View style={styles.aiContent}>
-            <Text style={styles.aiPrompt}>How can I assist your travel or delivery today?</Text>
-            <View style={styles.aiChips}>
-              <TouchableOpacity style={styles.aiChip} activeOpacity={0.85}>
-                <Text style={styles.aiChipText}>⚡ Book auto to T. Nagar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.aiChip} activeOpacity={0.85}>
-                <Text style={styles.aiChipText}>📊 Compare Auto vs Cab</Text>
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.aiChip} activeOpacity={0.85}>
-                <Text style={styles.aiChipText}>📦 Send parcel to Anna Nagar</Text>
-              </TouchableOpacity>
-            </View>
+            {aiLoading ? (
+              <View style={{ paddingVertical: 12, zIndex: 1 }}>
+                <TypingIndicator />
+              </View>
+            ) : aiReply ? (
+              <Text style={styles.aiReply}>{aiReply}</Text>
+            ) : (
+              <>
+                <Text style={styles.aiPrompt}>How can I assist your travel or delivery today?</Text>
+                <View style={styles.aiChips}>
+                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage('Book auto to T. Nagar')}>
+                    <Text style={styles.aiChipText}>⚡ Book auto to T. Nagar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage('Compare Auto vs Cab')}>
+                    <Text style={styles.aiChipText}>📊 Compare Auto vs Cab</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage('Send parcel to Anna Nagar')}>
+                    <Text style={styles.aiChipText}>📦 Send parcel to Anna Nagar</Text>
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
           </View>
           <View style={styles.aiInputRow}>
             <TextInput
               style={styles.aiInput}
               placeholder="Type or ask Ematix anything..."
               placeholderTextColor={colors.textMuted}
+              value={aiInput}
+              onChangeText={setAiInput}
+              onSubmitEditing={() => sendAiMessage()}
+              returnKeyType="send"
             />
-            <TouchableOpacity style={styles.aiSendBtn} activeOpacity={0.85}>
+            <TouchableOpacity
+              style={[styles.aiSendBtn, (aiLoading || !aiInput.trim()) && styles.aiSendBtnDisabled]}
+              activeOpacity={0.85}
+              disabled={aiLoading || !aiInput.trim()}
+              onPress={() => sendAiMessage()}
+            >
               <MaterialIcon name="arrow-upward" size={18} color={colors.onPrimary} />
             </TouchableOpacity>
           </View>
@@ -901,6 +1009,12 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     borderRadius: 999,
   },
   aiChipText: { ...type.labelSm, color: colors.onPrimary },
+  aiReply: {
+    ...type.bodySm,
+    color: colors.onPrimary,
+    lineHeight: 18,
+    zIndex: 1,
+  },
   aiInputRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -919,6 +1033,9 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     backgroundColor: colors.primaryContainer,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  aiSendBtnDisabled: {
+    opacity: 0.4,
   },
   radarCard: {
     backgroundColor: colors.surfaceContainerLowest,

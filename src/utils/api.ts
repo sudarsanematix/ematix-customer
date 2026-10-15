@@ -1,4 +1,4 @@
-const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
+const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.35:4000';
 
 export type ApiError = Error & { status?: number; code?: string };
 

@@ -47,24 +47,6 @@ const SIZE_TIERS = [
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
 
-const calculateParcelFare = (dist: number, type: string, weight: string, serverConfigs: any) => {
-  const typeMap: Record<string, string> = {
-    'two-wheeler': 'parcel_bike',
-    'auto': 'parcel_auto'
-  };
-  const backendType = typeMap[type] || 'parcel_bike';
-
-  const c = serverConfigs && serverConfigs[backendType]
-    ? { base: serverConfigs[backendType].baseFare, perKm: serverConfigs[backendType].perKmRate, min: serverConfigs[backendType].minFare }
-    : (type === 'auto' ? { base: 45, perKm: 12, min: 60 } : { base: 25, perKm: 7, min: 30 }); // fallback
-
-  let weightSurge = 0;
-  if (weight === 'medium') weightSurge = 10;
-  if (weight === 'large') weightSurge = 20;
-  const fare = c.base + (dist * c.perKm) + weightSurge;
-  return Math.max(Math.round(fare), c.min);
-};
-
 export default function PackageDeliveryScreen() {
   const { colors } = useTheme();
   const styles = createStyles(colors);
@@ -80,20 +62,33 @@ export default function PackageDeliveryScreen() {
   const [pickup, setPickup] = useState(params.pickup as string || 'Greenways Road, RA Puram');
   const [dropoff, setDropoff] = useState(params.destination as string || '12th Cross St, Indiranagar');
   const distanceKm = parseFloat(params.distance as string) / 1000 || 6.2;
-  const [fareConfigs, setFareConfigs] = useState<any>(null);
+  const pLat = params.pLat as string | undefined;
+  const pLng = params.pLng as string | undefined;
+  const dLat = params.dLat as string | undefined;
+  const dLng = params.dLng as string | undefined;
+  const [startingFare, setStartingFare] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/fares`)
+    // Fetch the fare the booking path will actually charge rather than
+    // approximating it locally. Coordinates are sent when available so the
+    // distance matches the booking calculation exactly.
+    const query = [
+      'type=parcel',
+      'vehicle=two-wheeler',
+      `distanceKm=${encodeURIComponent(distanceKm)}`,
+      pLat && pLng ? `pickupLat=${encodeURIComponent(pLat)}&pickupLng=${encodeURIComponent(pLng)}` : '',
+      dLat && dLng ? `dropoffLat=${encodeURIComponent(dLat)}&dropoffLng=${encodeURIComponent(dLng)}` : '',
+    ].filter(Boolean).join('&');
+
+    fetch(`${API_BASE}/api/fares/estimate?${query}`)
       .then(res => res.json())
       .then(data => {
-        if (data.success && data.fares) {
-          setFareConfigs(data.fares);
+        if (data.success && typeof data.fare === 'number') {
+          setStartingFare(data.fare);
         }
       })
-      .catch(err => console.error('Failed to fetch fares', err));
-  }, []);
-
-  const startingFare = calculateParcelFare(distanceKm, 'two-wheeler', weightTier, fareConfigs);
+      .catch(err => console.error('Failed to fetch fare estimate', err));
+  }, [distanceKm, pLat, pLng, dLat, dLng]);
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -360,7 +355,7 @@ export default function PackageDeliveryScreen() {
           <View style={styles.priceCol}>
             <Text style={styles.priceLabel}>Starting Fare</Text>
             <View style={styles.priceRow}>
-              <Text style={styles.priceValue}>₹{startingFare}</Text>
+              <Text style={styles.priceValue}>₹{startingFare ?? '--'}</Text>
             </View>
           </View>
           <TouchableOpacity

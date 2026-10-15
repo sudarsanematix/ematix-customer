@@ -11,10 +11,12 @@ import { authedFetch } from '../../utils/api';
 type HistoryRide = {
   id: string;
   type: string;
+  vehicleType?: string | null;
   status: string;
   price: number | string | null;
   pickup: { address?: string } | null;
   dropoff: { address?: string } | null;
+  createdAt?: string | null;
   completedAt: string | null;
   cancelledAt: string | null;
   cancelReason: string;
@@ -37,7 +39,7 @@ const VEHICLE_LABELS: Record<string, string> = {
   premium_car: 'Premium Taxi',
 };
 
-const formatWhen = (value: string | null) => {
+const formatWhen = (value: string | null | undefined) => {
   if (!value) return '';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
@@ -49,11 +51,20 @@ const formatWhen = (value: string | null) => {
   });
 };
 
+const formatPrice = (price: number | string | null | undefined) => {
+  if (price == null || price === '') return '—';
+  const str = String(price).trim();
+  if (/^[₹$€£]/.test(str)) return str;
+  return `₹${str}`;
+};
+
 const titleFor = (ride: HistoryRide) => {
   if (ride.type === 'parcel' || ride.type === 'delivery') {
     return ride.status === 'cancelled' ? 'Cancelled delivery' : 'Parcel delivery';
   }
-  const rawType = ride.partner?.vehicleType || (ride as any).vehicleType || '';
+  const rawType = (ride.vehicleType || ride.partner?.vehicleType || '').trim();
+  if (!rawType) return 'Ride';
+  
   // If backend stored the display name instead of the ID
   if (rawType.toLowerCase().includes('car') || rawType.toLowerCase().includes('auto') || rawType.toLowerCase().includes('taxi')) {
     // Avoid appending ' ride' if it already sounds complete, unless it's just 'auto'
@@ -62,18 +73,42 @@ const titleFor = (ride: HistoryRide) => {
     }
     return rawType;
   }
-  const label = VEHICLE_LABELS[rawType] || rawType || 'Ride';
+  const label = VEHICLE_LABELS[rawType.toLowerCase()] || rawType;
   return `${label} ride`;
 };
 
 const getRideImage = (order: HistoryRide) => {
-  const vType = (order.partner?.vehicleType || (order as any).vehicleType || '').toLowerCase();
+  const vType = (order.vehicleType || order.partner?.vehicleType || '').toLowerCase();
   
   if (vType === 'auto' || vType.includes('auto')) return require('../../../assets/images/auto.png');
   if (vType === 'premium_car' || vType.includes('premium') || vType.includes('taxi')) return require('../../../assets/images/premium_car.png');
   if (vType === 'car' || vType.includes('economic') || vType.includes('sedan')) return require('../../../assets/images/car.png');
   
   return require('../../../assets/images/bike.jpg');
+};
+
+/**
+ * Human-readable vehicle name for the badge next to the card icon, e.g.
+ * "Economic Car", "Premium Taxi", "Auto", "Two Wheeler". Handles both the
+ * canonical IDs (car/premium_car) and the display names the booking flow
+ * stores (Economic Car / Premium Taxi / Ematix Auto).
+ */
+const vehicleLabelFor = (order: HistoryRide): string => {
+  const raw = (order.vehicleType || order.partner?.vehicleType || '').trim();
+  const k = raw.toLowerCase();
+  const isParcel = order.type === 'parcel' || order.type === 'delivery';
+
+  if (isParcel) {
+    if (k.includes('two') || k.includes('bike')) return 'Two Wheeler';
+    if (k.includes('auto')) return 'Auto';
+    return raw || 'Parcel';
+  }
+
+  if (k.includes('premium') || k.includes('taxi')) return 'Premium Taxi';
+  if (k.includes('economic') || k.includes('sedan') || k.includes('car')) return 'Economic Car';
+  if (k.includes('auto')) return 'Auto';
+  if (k.includes('bike')) return 'Bike';
+  return VEHICLE_LABELS[k] || raw;
 };
 
 export default function OrdersScreen() {
@@ -200,17 +235,22 @@ export default function OrdersScreen() {
                         style={styles.cardIcon}
                       />
                     </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.orderTitle}>{titleFor(order)}</Text>
+                    <View style={{ flex: 1, minWidth: 0 }}>
+                      <Text style={styles.orderTitle} numberOfLines={1}>{titleFor(order)}</Text>
+                      {vehicleLabelFor(order) ? (
+                        <View style={styles.vehicleBadge}>
+                          <Text style={styles.vehicleBadgeText}>{vehicleLabelFor(order)}</Text>
+                        </View>
+                      ) : null}
                       <Text style={styles.orderDate}>
-                        {formatWhen(order.completedAt || order.cancelledAt) || 'Date unavailable'}
+                        {formatWhen(order.completedAt || order.cancelledAt || order.createdAt) || 'Date unavailable'}
                       </Text>
                     </View>
                   </View>
 
                   <View style={styles.cardHeaderRight}>
                     <Text style={styles.orderPrice}>
-                      {order.status === 'cancelled' ? '—' : `${order.price ?? '—'}`}
+                      {order.status === 'cancelled' ? '—' : formatPrice(order.price)}
                     </Text>
                     <View style={styles.statusBadge}>
                       <Text style={styles.statusText}>
@@ -306,7 +346,7 @@ const createStyles = (colors: any) => StyleSheet.create({
     borderColor: colors.outlineVariant,
   },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
-  cardHeaderLeft: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  cardHeaderLeft: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 10 },
   iconContainer: {
     width: 40,
     height: 40,
@@ -316,10 +356,20 @@ const createStyles = (colors: any) => StyleSheet.create({
     alignItems: 'center',
   },
   cardIcon: { width: 32, height: 32 },
-  orderTitle: { fontSize: 12, fontWeight: 'bold', color: colors.onSurface },
-  orderDate: { fontSize: 11, color: colors.textMuted },
-  cardHeaderRight: { alignItems: 'flex-end' },
-  orderPrice: { fontSize: 14, fontWeight: 'bold', color: colors.onSurface },
+  orderTitle: { fontSize: 14, fontWeight: '700', color: colors.onSurface, flexShrink: 1 },
+  vehicleBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.lightBlueTint,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    marginTop: 3,
+    marginBottom: 2,
+  },
+  vehicleBadgeText: { fontSize: 10, fontWeight: '700', color: colors.primary },
+  orderDate: { fontSize: 12, color: colors.textMuted },
+  cardHeaderRight: { alignItems: 'flex-end', justifyContent: 'flex-start', flexShrink: 0, marginLeft: 8 },
+  orderPrice: { fontSize: 16, fontWeight: '700', color: colors.onSurface },
   statusBadge: {
     backgroundColor: colors.lightBlueTint,
     paddingHorizontal: 8,

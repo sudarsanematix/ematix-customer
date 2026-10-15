@@ -108,7 +108,7 @@ export default function FindingDriverScreen() {
   const styles = createStyles(colors, mapTheme);
   const router = useRouter();
   const { user } = useAuth();
-  const { rideId, vehicle, pickup, dropoff, pLat, pLng, price } = useLocalSearchParams<{ rideId?: string, vehicle?: string, pickup?: string, dropoff?: string, pLat?: string, pLng?: string, price?: string }>();
+  const { rideId, vehicle, pickup, dropoff, pLat, pLng, price, riderName } = useLocalSearchParams<{ rideId?: string, vehicle?: string, pickup?: string, dropoff?: string, pLat?: string, pLng?: string, price?: string, riderName?: string }>();
   const vehicleName = vehicle === 'premium_car' ? 'Premium Car' : vehicle === 'auto' ? 'Ematix Auto' : vehicle === 'bike' ? 'Ematix Bike' : 'Economic Car';
   const vehicleTypeName = vehicle === 'premium_car' ? 'a Premium Car' : vehicle === 'auto' ? 'an Auto' : vehicle === 'bike' ? 'a Bike' : 'a Car';
   const vehiclePlural = vehicle === 'premium_car' ? 'premium cars' : vehicle === 'auto' ? 'autos' : vehicle === 'bike' ? 'bikes' : 'cars';
@@ -118,6 +118,7 @@ export default function FindingDriverScreen() {
   const pLngNum = pLng ? parseFloat(pLng) : 80.2341;
 
   const displayPrice = price ? (String(price).startsWith('₹') ? price : `₹${price}`) : '';
+  const riderNameDisplay = typeof riderName === 'string' ? riderName : '';
 
   const [timer, setTimer] = useState(24);
   const [showCancelModal, setShowCancelModal] = useState(false);
@@ -255,6 +256,12 @@ export default function FindingDriverScreen() {
               <Text style={styles.sheetTitle}>Finding {vehicleTypeName} near you...</Text>
             </View>
             <Text style={styles.sheetSubtitle}>Matching with top-rated drivers within 1.5 km</Text>
+            {riderNameDisplay ? (
+              <View style={styles.forSomeoneRow}>
+                <MaterialIcon name="group" size={14} color={colors.primary} />
+                <Text style={styles.forSomeoneText} numberOfLines={1}>Booking for {riderNameDisplay}</Text>
+              </View>
+            ) : null}
           </View>
 
           <View style={styles.progressContainer}>
@@ -648,6 +655,18 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     lineHeight: 20,
     color: colors.onSurfaceVariant,
     textAlign: 'center',
+  },
+  forSomeoneRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+    marginTop: 6,
+  },
+  forSomeoneText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    color: colors.primary,
   },
   progressContainer: {
     flexDirection: 'column',
