@@ -12,9 +12,11 @@ import {
   Image,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../theme/ThemeProvider';
 import { buildMapTheme, type MapThemeTokens } from '../../theme/mapTheme';
 import { fonts, type, spacing, radius } from '../../theme/typography';
+import type { TranslationKey } from '../../i18n/types';
 import SharedHeader from '../../components/SharedHeader';
 import MaterialIcon from '../../components/MaterialIcon';
 import RealMap, { CHENNAI_REGION } from '../../components/RealMap';
@@ -106,19 +108,19 @@ type RadarVehicleKind =
 
 type VehicleChip = {
   key: string;
-  label: string;
+  labelKey: TranslationKey;
   kinds: RadarVehicleKind[];
 };
 
 const VEHICLES_BY_SERVICE: Record<ServiceType, VehicleChip[]> = {
   ride: [
-    { key: 'car', label: 'Economic Car', kinds: ['car'] },
-    { key: 'premium_car', label: 'Premium Taxi', kinds: ['premium_car', 'prime_sedan'] },
-    { key: 'auto', label: 'Auto', kinds: ['auto'] },
+    { key: 'car', labelKey: 'vehicle.economicCar', kinds: ['car'] },
+    { key: 'premium_car', labelKey: 'vehicle.premiumTaxi', kinds: ['premium_car', 'prime_sedan'] },
+    { key: 'auto', labelKey: 'vehicle.auto', kinds: ['auto'] },
   ],
   parcel: [
-    { key: 'bike', label: 'Bike', kinds: ['bike', 'parcel_bike'] },
-    { key: 'auto', label: 'Auto', kinds: ['auto', 'parcel_auto', 'mini_truck'] },
+    { key: 'bike', labelKey: 'vehicle.bike', kinds: ['bike', 'parcel_bike'] },
+    { key: 'auto', labelKey: 'vehicle.auto', kinds: ['auto', 'parcel_auto', 'mini_truck'] },
   ],
 };
 
@@ -128,6 +130,7 @@ export default function HomeScreen() {
   const styles = createStyles(colors, mapTheme);
 
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   const { user, token } = useAuth();
   const [isLoading, setIsLoading] = useState(true);
   const [nearbyPartners, setNearbyPartners] = useState<any[]>([]);
@@ -157,6 +160,7 @@ export default function HomeScreen() {
   const chips = VEHICLES_BY_SERVICE[serviceType];
   // Guards against a stale key when the service changes under us.
   const activeChip = chips.find((c) => c.key === vehicleChipKey) ?? chips[0];
+  const activeChipLabel = t(activeChip.labelKey);
 
   const handleServiceChange = (service: ServiceType) => {
     setServiceType(service);
@@ -164,10 +168,8 @@ export default function HomeScreen() {
   };
 
   /** Keeps the chip's pin colour and the map markers on one source of truth. */
-  const AI_FALLBACK_REPLY =
-    "I can help plan trips, compare autos vs cabs, and send parcels. What would you like to do?";
-  const AI_OFFLINE_REPLY =
-    "I'm having trouble reaching the assistant right now. Please check your connection and try again.";
+  const AI_FALLBACK_REPLY = t('home.aiGreeting');
+  const AI_OFFLINE_REPLY = t('errors.assistantUnavailable');
 
   const markerColorFor = (kind?: string) =>
     kind === 'bike' || kind === 'auto' || kind === 'parcel_bike' || kind === 'parcel_auto'
@@ -175,7 +177,7 @@ export default function HomeScreen() {
       : mapTheme.routeDone;
 
   const locateMe = async () => {
-    setAddressName('Locating...');
+    setAddressName(t('common.locating'));
     try {
       const { status } = await Location.requestForegroundPermissionsAsync();
       if (status === 'granted') {
@@ -250,10 +252,10 @@ export default function HomeScreen() {
           setAddressName(osmName || `${lat.toFixed(3)}, ${lng.toFixed(3)}`);
         }
       } else {
-        setAddressName('Location denied');
+        setAddressName(t('errors.locationDenied'));
       }
     } catch (err) {
-      setAddressName('Location unavailable');
+      setAddressName(t('errors.locationUnavailable'));
     }
   };
 
@@ -424,7 +426,7 @@ export default function HomeScreen() {
             {isLoading ? (
               <Skeleton width={120} height={28} radius={6} style={{ marginBottom: 4 }} />
             ) : (
-              <Text style={styles.greeting}>Hello, {user?.name || user?.phone || 'Guest'} 👋</Text>
+              <Text style={styles.greeting}>{t('home.greeting')} {user?.name || user?.phone || t('common.guest')} 👋</Text>
             )}
             <TouchableOpacity style={styles.locationBtn} activeOpacity={0.8} onPress={locateMe}>
               <MaterialIcon name="near-me" size={18} color={colors.primary} />
@@ -524,7 +526,7 @@ export default function HomeScreen() {
             <View>
               <Text style={styles.radarTitle}>Live Vehicles Nearby</Text>
               <Text style={styles.radarSubtitle}>
-                {filteredPartners.length} {activeChip.label}
+                {filteredPartners.length} {activeChipLabel}
                 {filteredPartners.length === 1 ? '' : 's'} active
               </Text>
             </View>
@@ -583,7 +585,9 @@ export default function HomeScreen() {
                     onPress={() => setVehicleChipKey(chip.key)}
                   >
                     <Image source={chipImage} style={{ width: 40, height: 40, marginBottom: 8, resizeMode: 'contain' }} />
-                    <Text style={{ fontWeight: '600', fontSize: 12, textAlign: 'center', color: isActive ? colors.primary : colors.onSurfaceVariant }} numberOfLines={2}>{chip.label}</Text>
+                    <Text style={{ fontWeight: '600', fontSize: 12, textAlign: 'center', color: isActive ? colors.primary : colors.onSurfaceVariant }} numberOfLines={2}>
+                      {t(chip.labelKey)}
+                    </Text>
                   </TouchableOpacity>
                 );
               })}
@@ -633,14 +637,14 @@ export default function HomeScreen() {
               <View style={styles.mapEmpty} pointerEvents="none">
                 <MaterialIcon name="near-me" size={14} color={colors.onSurfaceVariant} />
                 <Text style={styles.mapEmptyText}>
-                  No {activeChip.label.toLowerCase()}s nearby right now
+                  No {activeChipLabel.toLowerCase()}s nearby right now
                 </Text>
               </View>
             ) : null}
             <View style={styles.mapLegend}>
               <View style={styles.legendItem}>
                 <View style={[styles.legendDot, { backgroundColor: markerColorFor(activeChip.kinds[0]) }]} />
-                <Text style={styles.legendText}>{activeChip.label}</Text>
+                <Text style={styles.legendText}>{activeChipLabel}</Text>
               </View>
             </View>
           </View>

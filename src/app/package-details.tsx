@@ -1,46 +1,54 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
-import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput } from 'react-native';
+import React, { useState, useEffect, useMemo } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon, { MaterialIconName } from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
 import { radius, fonts } from '../theme/typography';
+import type { TranslationKey } from '../i18n';
 
 interface CategoryItem {
   id: string;
-  label: string;
+  labelKey: TranslationKey;
   icon: MaterialIconName;
 }
 
 const CATEGORIES: CategoryItem[] = [
-  { id: 'electronics', label: 'Documents / Electronics', icon: 'devices-other' },
-  { id: 'food', label: 'Food / Tiffin', icon: 'lunch-dining' },
-  { id: 'clothing', label: 'Clothing / Laundry', icon: 'checkroom' },
-  { id: 'groceries', label: 'Groceries / Personal', icon: 'shopping-bag' },
-  { id: 'heavy', label: 'Heavy Box', icon: 'inventory-2' },
+  { id: 'electronics', labelKey: 'package.categoryElectronics', icon: 'devices-other' },
+  { id: 'food', labelKey: 'package.categoryFood', icon: 'lunch-dining' },
+  { id: 'clothing', labelKey: 'package.categoryClothing', icon: 'checkroom' },
+  { id: 'groceries', labelKey: 'package.categoryGroceries', icon: 'shopping-bag' },
+  { id: 'heavy', labelKey: 'package.categoryHeavy', icon: 'inventory-2' },
 ];
 
-const SIZE_TIERS = [
+const SIZE_TIERS: {
+  id: string;
+  titleKey: TranslationKey;
+  badgeKey: TranslationKey;
+  descKey: TranslationKey;
+  icon: MaterialIconName;
+}[] = [
   {
     id: 'small',
-    title: 'Small',
-    badge: '< 5 kg',
-    desc: 'Fits in courier backpack or bike carrier box',
+    titleKey: 'package.sizeSmall',
+    badgeKey: 'package.weightSmall',
+    descKey: 'package.sizeDescSmall',
     icon: 'backpack' as MaterialIconName,
   },
   {
     id: 'medium',
-    title: 'Medium',
-    badge: '5 – 20 kg',
-    desc: 'Fits comfortably on two-wheeler footboard',
+    titleKey: 'package.sizeMedium',
+    badgeKey: 'package.weightMedium',
+    descKey: 'package.sizeDescMedium',
     icon: 'two-wheeler' as MaterialIconName,
   },
   {
     id: 'large',
-    title: 'Large',
-    badge: '> 20 kg',
-    desc: 'Requires Auto or 3-Wheeler cargo space',
+    titleKey: 'package.sizeLarge',
+    badgeKey: 'package.weightLarge',
+    descKey: 'package.sizeDescLarge',
     icon: 'local-shipping' as MaterialIconName,
   },
 ];
@@ -48,6 +56,7 @@ const SIZE_TIERS = [
 const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
 
 export default function PackageDeliveryScreen() {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
@@ -94,12 +103,22 @@ export default function PackageDeliveryScreen() {
     <SafeAreaView style={styles.safeArea}>
       <SharedHeader currentScreen="package-details" title="Package Details" />
 
-      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.contentContainer}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Steps Progress Header */}
         <View style={styles.progressHeader}>
           <View style={styles.progressHeaderRow}>
-            <Text style={styles.stepLabel}>Step 2 of 4</Text>
-            <Text style={styles.stepTitle}>Package Specs</Text>
+            <Text style={styles.stepLabel}>{t('package.step2of4')}</Text>
+            <Text style={styles.stepTitle}>{t('package.specs')}</Text>
           </View>
           <View style={styles.progressBar}>
             <View style={styles.progressFill} />
@@ -111,10 +130,12 @@ export default function PackageDeliveryScreen() {
           <View style={styles.routeHeader}>
             <View style={styles.routePill}>
               <MaterialIcon name="near-me" size={15} color={colors.primary} />
-              <Text style={styles.routePillText}>6.2 km • 24 mins ETA</Text>
+              <Text style={styles.routePillText}>
+                {t('package.routePill', { distance: `${distanceKm.toFixed(1)} km`, time: '24 mins' })}
+              </Text>
             </View>
             <TouchableOpacity style={styles.editRouteBtn} activeOpacity={0.7}>
-              <Text style={styles.editRouteText}>Edit Route</Text>
+              <Text style={styles.editRouteText}>{t('package.editRoute')}</Text>
               <MaterialIcon name="chevron-right" size={16} color={colors.primary} />
             </TouchableOpacity>
           </View>
@@ -126,12 +147,12 @@ export default function PackageDeliveryScreen() {
                 <View style={styles.nodeDotBlue} />
               </View>
               <View style={styles.nodeText}>
-                <Text style={styles.nodeLabelMuted}>PICKUP</Text>
+                <Text style={styles.nodeLabelMuted}>{t('package.pickupLabel')}</Text>
                 <TextInput
                   style={styles.nodeInput}
                   value={pickup}
                   onChangeText={setPickup}
-                  placeholder="Enter pickup location"
+                  placeholder={t('package.pickupPlaceholder')}
                   placeholderTextColor={colors.textMuted}
                 />
               </View>
@@ -141,12 +162,12 @@ export default function PackageDeliveryScreen() {
                 <View style={styles.nodeDotRed} />
               </View>
               <View style={styles.nodeText}>
-                <Text style={styles.nodeLabelRed}>DROP-OFF</Text>
+                <Text style={styles.nodeLabelRed}>{t('package.dropoffLabel')}</Text>
                 <TextInput
                   style={styles.nodeInput}
                   value={dropoff}
                   onChangeText={setDropoff}
-                  placeholder="Enter drop-off location"
+                  placeholder={t('package.dropoffPlaceholder')}
                   placeholderTextColor={colors.textMuted}
                 />
               </View>
@@ -156,8 +177,8 @@ export default function PackageDeliveryScreen() {
 
         {/* Category Carousel */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>What are you sending?</Text>
-          <Text style={styles.sectionTagMuted}>Required</Text>
+          <Text style={styles.sectionTitle}>{t('package.whatSending')}</Text>
+          <Text style={styles.sectionTagMuted}>{t('common.required')}</Text>
         </View>
         <ScrollView
           horizontal
@@ -179,7 +200,7 @@ export default function PackageDeliveryScreen() {
                   color={isSelected ? colors.primary : colors.textMuted}
                 />
                 <Text style={[styles.categoryChipText, isSelected && styles.categoryChipTextActive]}>
-                  {cat.label}
+                  {t(cat.labelKey)}
                 </Text>
               </TouchableOpacity>
             );
@@ -188,8 +209,8 @@ export default function PackageDeliveryScreen() {
 
         {/* Size & Weight Classification */}
         <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Size & Weight Classification</Text>
-          <Text style={styles.sectionTagPrimary}>Recommended</Text>
+          <Text style={styles.sectionTitle}>{t('package.sizeWeight')}</Text>
+          <Text style={styles.sectionTagPrimary}>{t('package.recommended')}</Text>
         </View>
         <View style={styles.sizeGroups}>
           {SIZE_TIERS.map((tier) => {
@@ -210,15 +231,15 @@ export default function PackageDeliveryScreen() {
                 </View>
                 <View style={styles.sizeTextCol}>
                   <View style={styles.sizeTitleRow}>
-                    <Text style={styles.sizeTitle}>{tier.title}</Text>
+                    <Text style={styles.sizeTitle}>{t(tier.titleKey)}</Text>
                     <View style={[styles.sizeBadge, isSelected ? styles.sizeBadgeActive : styles.sizeBadgeInactive]}>
                       <Text style={[styles.sizeBadgeText, isSelected ? styles.sizeBadgeTextActive : styles.sizeBadgeTextInactive]}>
-                        {tier.badge}
+                        {t(tier.badgeKey)}
                       </Text>
                     </View>
                   </View>
                   <Text style={[styles.sizeDesc, isSelected ? styles.sizeDescActive : styles.sizeDescInactive]} numberOfLines={1}>
-                    {tier.desc}
+                    {t(tier.descKey)}
                   </Text>
                 </View>
                 <View style={[styles.sizeCheck, isSelected ? styles.sizeCheckActive : styles.sizeCheckInactive]}>
@@ -245,12 +266,12 @@ export default function PackageDeliveryScreen() {
             </View>
             <View style={styles.fragileTextCol}>
               <View style={styles.fragileTitleRow}>
-                <Text style={styles.fragileTitle}>Handle with extra care</Text>
+                <Text style={styles.fragileTitle}>{t('package.fragileTitle')}</Text>
                 <View style={styles.fragileBadge}>
-                  <Text style={styles.fragileBadgeText}>FRAGILE</Text>
+                  <Text style={styles.fragileBadgeText}>{t('package.fragileBadge')}</Text>
                 </View>
               </View>
-              <Text style={styles.fragileDesc}>Special padded placement, no heavy stacking</Text>
+              <Text style={styles.fragileDesc}>{t('package.fragileDesc')}</Text>
             </View>
           </View>
           <View style={[styles.toggleOuter, isFragile ? styles.toggleOuterOn : styles.toggleOuterOff]}>
@@ -264,10 +285,10 @@ export default function PackageDeliveryScreen() {
         <View style={styles.valueCard}>
           <View style={styles.valueHeader}>
             <View style={styles.valueTitleRow}>
-              <Text style={styles.valueTitle}>Declared Item Value</Text>
+              <Text style={styles.valueTitle}>{t('package.declaredValue')}</Text>
               <MaterialIcon name="help" size={18} color={colors.textMuted} />
             </View>
-            <Text style={styles.valueCoverText}>Free Cover up to ₹5,000</Text>
+            <Text style={styles.valueCoverText}>{t('package.freeCover')}</Text>
           </View>
           <View style={styles.valueInputBox}>
             <Text style={styles.valueRupee}>₹</Text>
@@ -276,37 +297,37 @@ export default function PackageDeliveryScreen() {
               value={declaredValue}
               onChangeText={setDeclaredValue}
               keyboardType="numeric"
-              placeholder="Enter value"
+              placeholder={t('package.enterValue')}
               placeholderTextColor={colors.textMuted}
             />
             <View style={styles.insuredPill}>
               <MaterialIcon name="verified" size={14} color={colors.primary} />
-              <Text style={styles.insuredPillText}>Insured</Text>
+              <Text style={styles.insuredPillText}>{t('package.insured')}</Text>
             </View>
           </View>
           <View style={styles.valueFooter}>
             <MaterialIcon name="shield" size={14} color={colors.primary} />
-            <Text style={styles.valueFooterText}>Ematix Transit Shield included at zero extra cost</Text>
+            <Text style={styles.valueFooterText}>{t('package.transitShield')}</Text>
           </View>
         </View>
 
         {/* Recipient Details */}
         <View style={styles.recipientCard}>
           <View style={styles.recipientHeader}>
-            <Text style={styles.recipientTitle}>Recipient Information</Text>
+            <Text style={styles.recipientTitle}>{t('package.recipientInfo')}</Text>
             <TouchableOpacity style={styles.chooseContactBtn} activeOpacity={0.8}>
               <MaterialIcon name="contacts" size={16} color={colors.primary} />
-              <Text style={styles.chooseContactText}>Choose Contact</Text>
+              <Text style={styles.chooseContactText}>{t('package.chooseContact')}</Text>
             </TouchableOpacity>
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Receiver&apos;s Full Name</Text>
+            <Text style={styles.fieldLabel}>{t('package.receiverName')}</Text>
             <View style={styles.fieldBox}>
               <MaterialIcon name="person" size={20} color={colors.textMuted} />
               <TextInput
                 style={styles.fieldInput}
-                placeholder="e.g. Priya Sharma"
+                placeholder={t('package.receiverNamePlaceholder')}
                 placeholderTextColor={colors.textMuted}
                 value={recipientName}
                 onChangeText={setRecipientName}
@@ -315,12 +336,12 @@ export default function PackageDeliveryScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>Contact Number</Text>
+            <Text style={styles.fieldLabel}>{t('package.contactNumber')}</Text>
             <View style={styles.fieldBox}>
               <MaterialIcon name="call" size={20} color={colors.textMuted} />
               <TextInput
                 style={styles.fieldInput}
-                placeholder="+91 00000 00000"
+                placeholder={t('package.contactNumberPlaceholder')}
                 placeholderTextColor={colors.textMuted}
                 value={recipientPhone}
                 onChangeText={setRecipientPhone}
@@ -334,8 +355,8 @@ export default function PackageDeliveryScreen() {
               {smsTracking && <MaterialIcon name="check" size={16} color={colors.onPrimary} />}
             </View>
             <View style={styles.smsTextCol}>
-              <Text style={styles.smsTitle}>Send live SMS tracking link to receiver</Text>
-              <Text style={styles.smsDesc}>Recipient gets real-time driver ETA and delivery PIN</Text>
+              <Text style={styles.smsTitle}>{t('package.smsTitle')}</Text>
+              <Text style={styles.smsDesc}>{t('package.smsDesc')}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -344,16 +365,17 @@ export default function PackageDeliveryScreen() {
         <View style={styles.notePill}>
           <MaterialIcon name="info" size={20} color={colors.primary} />
           <Text style={styles.noteText}>
-            No prohibited goods, perishables exceeding 4h, or hazardous chemicals allowed.
+            {t('package.prohibitedNote')}
           </Text>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Bottom Checkout Bar */}
       <View style={styles.bottomBar}>
         <View style={styles.bottomContent}>
           <View style={styles.priceCol}>
-            <Text style={styles.priceLabel}>Starting Fare</Text>
+            <Text style={styles.priceLabel}>{t('package.startingFare')}</Text>
             <View style={styles.priceRow}>
               <Text style={styles.priceValue}>₹{startingFare ?? '--'}</Text>
             </View>
@@ -377,7 +399,7 @@ export default function PackageDeliveryScreen() {
             })}
             activeOpacity={0.95}
           >
-            <Text style={styles.selectVehicleText}>Select Vehicle</Text>
+            <Text style={styles.selectVehicleText}>{t('nav.selectVehicle')}</Text>
             <MaterialIcon name="arrow-forward" size={20} color={colors.onPrimary} />
           </TouchableOpacity>
         </View>
@@ -390,6 +412,9 @@ const createStyles = (colors: any) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,
+  },
+  flex: {
+    flex: 1,
   },
   contentContainer: {
     paddingBottom: 180,

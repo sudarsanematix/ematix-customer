@@ -12,6 +12,7 @@ import {
   Alert,
 } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import Svg, { Defs, LinearGradient as SvgGradient, Stop, Path } from 'react-native-svg';
 import { LinearGradient } from 'expo-linear-gradient';
 import SharedHeader from '../components/SharedHeader';
@@ -142,6 +143,7 @@ function BouncePin({ children }: { children: React.ReactNode }) {
 }
 
 export default function SelectRideScreen() {
+  const { t } = useTranslation();
   const { colors, isDark } = useTheme();
   const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
   const styles = createStyles(colors, mapTheme);
@@ -209,8 +211,8 @@ export default function SelectRideScreen() {
 
   const parsedDistance = distance ? parseFloat(distance as string) : null;
   const parsedDuration = duration ? parseFloat(duration as string) : null;
-  const distKm = parsedDistance ? (parsedDistance / 1000).toFixed(1) + 'km' : '20km';
-  const timeMins = parsedDuration ? Math.ceil(parsedDuration / 60) + 'mins' : '45mins';
+  const distKm = parsedDistance ? (parsedDistance / 1000).toFixed(1) + ' ' + t('common.km') : '20 ' + t('common.km');
+  const timeMins = parsedDuration ? Math.ceil(parsedDuration / 60) + ' ' + t('common.mins') : '45 ' + t('common.mins');
 
   // Base calculation for dynamic prices
   const distKmVal = parsedDistance ? (parsedDistance / 1000) : 20;
@@ -221,11 +223,11 @@ export default function SelectRideScreen() {
 
   const dynamicRideOptions = RIDE_OPTIONS.map(ride => {
     if (ride.id === 'car') {
-      return { ...ride, distance: distKm, time: timeMins, price: '₹' + carPrice };
+      return { ...ride, name: t('vehicle.economicCar'), promo: t('booking.notApplied'), distance: distKm, time: timeMins, price: '₹' + carPrice };
     } else if (ride.id === 'premium_car') {
-      return { ...ride, distance: distKm, time: timeMins, price: '₹' + premiumCarPrice };
+      return { ...ride, name: t('vehicle.premiumTaxi'), promo: t('booking.notApplied'), distance: distKm, time: timeMins, price: '₹' + premiumCarPrice };
     } else if (ride.id === 'auto') {
-      return { ...ride, distance: distKm, time: timeMins, price: '₹' + autoPrice };
+      return { ...ride, name: t('vehicle.ematixAuto'), promo: t('booking.ecoApplied'), distance: distKm, time: timeMins, price: '₹' + autoPrice };
     }
     return ride;
   });
@@ -297,7 +299,7 @@ export default function SelectRideScreen() {
       cleanupListeners();
       if (!data?.id) {
         rearmSwipe();
-        Alert.alert('Error', 'Invalid response from server. Please try again.');
+        Alert.alert(t('errors.requestFailed'), t('errors.invalidResponse'));
         return;
       }
       // Success: keep the screen locked (isRequesting stays true) while we
@@ -309,7 +311,7 @@ export default function SelectRideScreen() {
     const onRideError = (data: any) => {
       cleanupListeners();
       rearmSwipe();
-      Alert.alert('Request Failed', data?.message || 'Could not request ride. Please try again.');
+      Alert.alert(t('errors.requestFailed'), data?.message || t('errors.couldNotRequestRide'));
     };
 
     handlersRef.current = { onRequested: onRideRequested, onError: onRideError };
@@ -324,8 +326,8 @@ export default function SelectRideScreen() {
       rearmSwipe();
 
       Alert.alert(
-        'Connection Delayed',
-        'No response was received. You can retry the request.'
+        t('errors.connectionDelayed'),
+        t('errors.noResponse')
       );
     }, 15000);
 
@@ -346,7 +348,7 @@ export default function SelectRideScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SharedHeader currentScreen="select-ride" title="Select Vehicle" />
+      <SharedHeader currentScreen="select-ride" title={t('nav.selectVehicle')} />
 
       {/* Map Canvas with Overlays */}
       <View style={styles.mapContainer}>
@@ -355,8 +357,8 @@ export default function SelectRideScreen() {
           style={styles.mapImage}
           showUserLocation={true}
           markers={[
-            { id: 'pickup', latitude: pLat, longitude: pLng, color: mapTheme.routeDone, title: 'Pickup' },
-            { id: 'dropoff', latitude: dLat, longitude: dLng, color: mapTheme.success, title: 'Drop-off' }
+            { id: 'pickup', latitude: pLat, longitude: pLng, color: mapTheme.routeDone, title: t('package.pickupLabel') },
+            { id: 'dropoff', latitude: dLat, longitude: dLng, color: mapTheme.success, title: t('package.dropoffLabel') }
           ]}
           routeCoordinates={routeCoords}
           mapPadding={{ top: 80, bottom: 420, left: 40, right: 40 }}
@@ -391,7 +393,9 @@ export default function SelectRideScreen() {
             {isForSomeoneElse && riderName ? (
               <View style={styles.forSomeoneChip}>
                 <MaterialIcon name="group" size={14} color={colors.primary} />
-                <Text style={styles.forSomeoneText} numberOfLines={1}>For {riderName}</Text>
+                <Text style={styles.forSomeoneText} numberOfLines={1}>
+                  {t('booking.forRider', { name: riderName })}
+                </Text>
               </View>
             ) : null}
             <View style={styles.ratingRow}>
@@ -443,7 +447,7 @@ export default function SelectRideScreen() {
         <View style={styles.swipeWrap}>
           <SwipeButton
             key={swipeResetKey}
-            title={isRequesting ? 'Sending Request...' : 'Slide To Send Request'}
+            title={isRequesting ? t('booking.sendingRequest') : t('booking.slideToSendRequest')}
             disabled={isRequesting}
             onSwipeComplete={requestRide}
           />

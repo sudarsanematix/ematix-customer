@@ -2,6 +2,7 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { socketService } from '../utils/socket';
 import { authedFetch } from '../utils/api';
+import type { AppLanguage } from '../i18n/languages';
 
 export type CustomerPreferences = {
   notifications: {
@@ -12,7 +13,8 @@ export type CustomerPreferences = {
   };
   receipts: boolean;
   shareLiveLocation: boolean;
-  language: string;
+  /** Stored as a locale code ('en' | 'ta'), never as a display label. */
+  language: AppLanguage;
 };
 
 export type CustomerStats = {

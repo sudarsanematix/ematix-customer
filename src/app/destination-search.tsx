@@ -13,6 +13,7 @@ import {
 import * as Location from 'expo-location';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import RealMap from '../components/RealMap';
 import SharedHeader from '../components/SharedHeader';
 import { useTheme } from '../theme/ThemeProvider';
@@ -79,6 +80,7 @@ const calculateFare = (distKm: number, type: string, serverConfigs: any) => {
 };
 
 export default function DestinationSearchScreen() {
+  const { t } = useTranslation();
   const { colors, isDark } = useTheme();
   const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
   const styles = createStyles(colors, mapTheme);
@@ -324,7 +326,7 @@ export default function DestinationSearchScreen() {
             style={styles.locateBtn}
             activeOpacity={0.9}
             onPress={async () => {
-              setPickup('Locating...');
+              setPickup(t('common.locating'));
               let currentCoords = myLocation;
               if (!currentCoords) {
                 try {
@@ -333,7 +335,7 @@ export default function DestinationSearchScreen() {
                   setMyLocation(currentCoords);
                 } catch (e) {
                   console.warn('GPS failed', e);
-                  setPickup('Current Location');
+                  setPickup(t('booking.currentLocation'));
                   return;
                 }
               }
@@ -344,17 +346,17 @@ export default function DestinationSearchScreen() {
                 const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${currentCoords.longitude},${currentCoords.latitude}.json?access_token=${MAPBOX_TOKEN}`;
                 const res = await fetch(url);
                 const data = await res.json();
-                const placeName = data.features?.[0]?.text || data.features?.[0]?.place_name || 'Current Location';
+                const placeName = data.features?.[0]?.text || data.features?.[0]?.place_name || t('booking.currentLocation');
                 setPickup(placeName);
               } catch (e) {
-                setPickup('Current Location');
+                setPickup(t('booking.currentLocation'));
               }
 
               if (focusedField === 'pickup') setFocusedField('destination');
             }}
           >
             <MaterialIcon name="my-location" size={24} color={colors.primary} />
-            <Text style={styles.locateBtnLabel}>Current Location</Text>
+            <Text style={styles.locateBtnLabel}>{t('booking.currentLocation')}</Text>
           </TouchableOpacity>
 
           {/* Sheet Handle */}
@@ -372,7 +374,9 @@ export default function DestinationSearchScreen() {
                   onPress={() => handleBookingForChange('me')}
                 >
                   <MaterialIcon name="person" size={16} color={bookingFor === 'me' ? colors.onPrimary : colors.onSurfaceVariant} />
-                  <Text style={[styles.bookingForText, bookingFor === 'me' && styles.bookingForTextActive]}>For me</Text>
+                  <Text style={[styles.bookingForText, bookingFor === 'me' && styles.bookingForTextActive]}>
+                    {t('booking.forMe')}
+                  </Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.bookingForSegment, bookingFor === 'someone' && styles.bookingForSegmentActive]}
@@ -380,7 +384,9 @@ export default function DestinationSearchScreen() {
                   onPress={() => handleBookingForChange('someone')}
                 >
                   <MaterialIcon name="group" size={16} color={bookingFor === 'someone' ? colors.onPrimary : colors.onSurfaceVariant} />
-                  <Text style={[styles.bookingForText, bookingFor === 'someone' && styles.bookingForTextActive]}>For someone else</Text>
+                  <Text style={[styles.bookingForText, bookingFor === 'someone' && styles.bookingForTextActive]}>
+                    {t('booking.forSomeoneElse')}
+                  </Text>
                 </TouchableOpacity>
               </View>
             )}
@@ -406,7 +412,7 @@ export default function DestinationSearchScreen() {
                         setShowConfirm(false);
                       }
                     }}
-                    placeholder="Pickup location"
+                    placeholder={t('booking.pickupLocationPlaceholder')}
                     placeholderTextColor={colors.textMuted}
                     onFocus={() => {
                       setFocusedField('pickup');
@@ -447,7 +453,7 @@ export default function DestinationSearchScreen() {
                         setShowConfirm(false);
                       }
                     }}
-                    placeholder="Where to?"
+                    placeholder={t('nav.whereTo')}
                     placeholderTextColor={colors.textMuted}
                     autoFocus
                     onFocus={() => {
@@ -475,14 +481,14 @@ export default function DestinationSearchScreen() {
                   style={styles.riderInput}
                   value={riderName}
                   onChangeText={(t) => { setRiderName(t); if (riderError) setRiderError(''); }}
-                  placeholder="Passenger name"
+                  placeholder={t('booking.passengerName')}
                   placeholderTextColor={colors.textMuted}
                 />
                 <TextInput
                   style={styles.riderInput}
                   value={riderPhone}
                   onChangeText={(t) => { setRiderPhone(t.replace(/[^0-9]/g, '')); if (riderError) setRiderError(''); }}
-                  placeholder="Passenger mobile number"
+                  placeholder={t('booking.passengerMobileNumber')}
                   placeholderTextColor={colors.textMuted}
                   keyboardType="phone-pad"
                   maxLength={15}
@@ -496,7 +502,7 @@ export default function DestinationSearchScreen() {
           {isMapPicking ? (
             <View style={{ padding: 24, paddingBottom: insets.bottom + 24 }}>
               <Text style={{ fontSize: 14, color: colors.textMuted, textAlign: 'center', marginBottom: 16 }}>
-                Drag the map to move the pin
+                {t('booking.dragMapToMovePin')}
               </Text>
               <TouchableOpacity
                 style={{ backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 16, alignItems: 'center' }}
@@ -508,7 +514,7 @@ export default function DestinationSearchScreen() {
                       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${mapCenterCoords.longitude},${mapCenterCoords.latitude}.json?access_token=${MAPBOX_TOKEN}`;
                       const res = await fetch(url);
                       const data = await res.json();
-                      const placeName = data.features?.[0]?.text || 'Pinned Location';
+                      const placeName = data.features?.[0]?.text || t('booking.pinnedLocation');
 
                       if (focusedField === 'pickup') {
                         setPickup(placeName);
@@ -522,11 +528,11 @@ export default function DestinationSearchScreen() {
                     } catch (e) {
                       // Fallback
                       if (focusedField === 'pickup') {
-                        setPickup('Pinned Location');
+                        setPickup(t('booking.pinnedLocation'));
                         setPickupCoords(mapCenterCoords);
                         setFocusedField('destination');
                       } else {
-                        setDestination('Pinned Location');
+                        setDestination(t('booking.pinnedLocation'));
                         setDestinationCoords(mapCenterCoords);
                         setShowConfirm(true);
                       }
@@ -535,7 +541,9 @@ export default function DestinationSearchScreen() {
                   setIsMapPicking(false);
                 }}
               >
-                <Text style={{ color: colors.onPrimary, fontSize: 18, fontWeight: '600' }}>Confirm Location</Text>
+                <Text style={{ color: colors.onPrimary, fontSize: 18, fontWeight: '600' }}>
+                  {t('booking.confirmLocation')}
+                </Text>
               </TouchableOpacity>
             </View>
           ) : !showConfirm ? (
@@ -616,14 +624,14 @@ export default function DestinationSearchScreen() {
                     <MaterialIcon name="place" size={20} color={colors.primary} />
                   </View>
                   <View style={styles.listTextContainer}>
-                    <Text style={styles.listTitle} numberOfLines={1}>Choose on Map</Text>
-                    <Text style={styles.listSubtitle} numberOfLines={1}>Select a specific point</Text>
+                    <Text style={styles.listTitle} numberOfLines={1}>{t('booking.chooseOnMap')}</Text>
+                    <Text style={styles.listSubtitle} numberOfLines={1}>{t('booking.chooseOnMapDesc')}</Text>
                   </View>
                 </TouchableOpacity>
 
                 {searchResults.length === 0 && (pickup.length > 1 || destination.length > 1) ? (
                   <View style={{ padding: 20, alignItems: 'center' }}>
-                    <Text style={{ color: colors.textMuted }}>No exact matches found. Type more to search.</Text>
+                    <Text style={{ color: colors.textMuted }}>{t('booking.noExactMatches')}</Text>
                   </View>
                 ) : null}
 
@@ -697,7 +705,9 @@ export default function DestinationSearchScreen() {
             <View style={{ padding: 24, paddingBottom: insets.bottom + 24 }}>
               {routeDistance != null && routeDuration != null && (
                 <View style={{ marginBottom: 24 }}>
-                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.onSurface, marginBottom: 12, paddingHorizontal: 4 }}>Trip Summary</Text>
+                  <Text style={{ fontSize: 16, fontWeight: '700', color: colors.onSurface, marginBottom: 12, paddingHorizontal: 4 }}>
+                    {t('booking.tripSummary')}
+                  </Text>
 
                   <View style={[styles.summaryCard, { borderColor: mapTheme.glassBorder }]}>
 
@@ -706,9 +716,11 @@ export default function DestinationSearchScreen() {
                       <View style={styles.summaryIcon}>
                         <MaterialIcon name="route" size={20} color={colors.primary} />
                       </View>
-                      <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 4, fontWeight: '500' }}>Distance</Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 4, fontWeight: '500' }}>
+                        {t('booking.distance')}
+                      </Text>
                       <Text style={{ fontSize: 17, fontWeight: '800', color: colors.onSurface }}>
-                        {(routeDistance / 1000).toFixed(1)} km
+                        {(routeDistance / 1000).toFixed(1)} {t('common.km')}
                       </Text>
                     </View>
 
@@ -720,9 +732,11 @@ export default function DestinationSearchScreen() {
                       <View style={styles.summaryIcon}>
                         <MaterialIcon name="schedule" size={20} color={colors.primary} />
                       </View>
-                      <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 4, fontWeight: '500' }}>Est. Time</Text>
+                      <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 4, fontWeight: '500' }}>
+                        {t('booking.estTime')}
+                      </Text>
                       <Text style={{ fontSize: 17, fontWeight: '800', color: colors.onSurface }}>
-                        {Math.ceil(routeDuration / 60)} mins
+                        {Math.ceil(routeDuration / 60)} {t('common.mins')}
                       </Text>
                     </View>
 
@@ -735,7 +749,7 @@ export default function DestinationSearchScreen() {
                         <MaterialIcon name="payments" size={20} color={mapTheme.success} />
                       </View>
                       <Text style={{ fontSize: 12, color: colors.textMuted, marginBottom: 4, fontWeight: '500' }}>
-                        {vehicle === 'parcel' ? 'Starting Fare' : 'Fare'}
+                        {vehicle === 'parcel' ? t('package.startingFare') : t('booking.fare')}
                       </Text>
                       <Text style={{ fontSize: 17, fontWeight: '800', color: mapTheme.success }}>
                         ₹{calculateFare(routeDistance / 1000, vehicle as string, fareConfigs)}
@@ -753,15 +767,15 @@ export default function DestinationSearchScreen() {
                     const name = riderName.trim();
                     const phoneDigits = riderPhone.replace(/\D/g, '');
                     if (!pickupCoords) {
-                      setRiderError('Please choose the pickup location for the passenger.');
+                      setRiderError(t('booking.pleaseChoosePickup'));
                       return;
                     }
                     if (!name) {
-                      setRiderError('Please enter the passenger name.');
+                      setRiderError(t('booking.pleaseEnterPassengerName'));
                       return;
                     }
                     if (phoneDigits.length < 10) {
-                      setRiderError('Please enter a valid 10-digit mobile number.');
+                      setRiderError(t('booking.pleaseEnterValidMobile'));
                       return;
                     }
                   }
@@ -795,7 +809,9 @@ export default function DestinationSearchScreen() {
                   }
                 }}
               >
-                <Text style={{ color: colors.onPrimary, fontSize: 18, fontWeight: '600' }}>Continue to Vehicles</Text>
+                <Text style={{ color: colors.onPrimary, fontSize: 18, fontWeight: '600' }}>
+                  {t('booking.continueToVehicles')}
+                </Text>
               </TouchableOpacity>
             </View>
           )}

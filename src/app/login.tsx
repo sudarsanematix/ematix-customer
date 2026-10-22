@@ -45,29 +45,14 @@ export default function LoginScreen() {
     setErrorMsg('');
     setLoading(true);
 
-    try {
-      const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
-      const response = await fetch(`${API_BASE}/api/auth/customer/send-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        setNotRegistered(false);
-        setOtp('');
-        setResendIn(30);
-        setStep('otp');
-      } else {
-        setErrorMsg(data.error || 'Failed to send OTP');
-      }
-    } catch (error: any) {
-      console.error(error);
-      setErrorMsg(error.message || 'Network error');
-    } finally {
+    // MOCK FLOW: Instant transition to OTP step (mock OTP is 1234)
+    setTimeout(() => {
+      setNotRegistered(false);
+      setOtp('');
+      setResendIn(30);
+      setStep('otp');
       setLoading(false);
-    }
+    }, 400);
   };
 
   const verifyOtp = async () => {
@@ -75,30 +60,25 @@ export default function LoginScreen() {
     setErrorMsg('');
     setLoading(true);
 
-    try {
-      const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
-      const response = await fetch(`${API_BASE}/api/auth/customer/verify-otp`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ phone, otp })
-      });
-
-      const data = await response.json();
-      if (data.success) {
-        await login(data.user, data.token);
+    // MOCK FLOW: Mock OTP 1234 verification
+    setTimeout(async () => {
+      if (otp === '1234') {
+        const mockUser = {
+          id: `cust-${phone.replace(/\D/g, '') || 'mock-1'}`,
+          phone,
+          name: 'Customer',
+          email: `${phone.replace(/\D/g, '') || 'user'}@ematix.com`,
+          createdAt: new Date().toISOString()
+        };
+        const mockToken = `mock-token-${Date.now()}`;
+        await login(mockUser, mockToken);
+        setLoading(false);
         router.replace('/(tabs)/home');
-      } else if (data.error === 'USER_NOT_FOUND') {
-        setNotRegistered(true);
-        setErrorMsg('');
       } else {
-        setErrorMsg(data.error || 'Backend verification failed');
+        setLoading(false);
+        setErrorMsg('Invalid OTP. Use 1234 for testing.');
       }
-    } catch (error: any) {
-      console.error(error);
-      setErrorMsg(error.message || 'Network error');
-    } finally {
-      setLoading(false);
-    }
+    }, 400);
   };
 
   return (

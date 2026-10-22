@@ -2,6 +2,7 @@ import React from 'react';
 import { Tabs } from 'expo-router';
 import { StyleSheet, Platform } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, type } from '../../theme/typography';
 import MaterialIcon from '../../components/MaterialIcon';
@@ -9,7 +10,16 @@ import MaterialIcon from '../../components/MaterialIcon';
 export default function TabLayout() {
   const { colors, isDark } = useTheme();
   const insets = useSafeAreaInsets();
-  
+  const { t, i18n } = useTranslation();
+
+  // Tamil tab labels are wider and carry stacked vowel signs, so they need a
+  // little more breathing room than the Latin ones. The style has to stay
+  // inline: a module-level StyleSheet would freeze the boot locale.
+  const isTamil = (i18n.resolvedLanguage || i18n.language || '').startsWith('ta');
+  const tabLabelStyle = isTamil
+    ? { ...styles.tabLabel, fontSize: 10.5, lineHeight: 16 }
+    : styles.tabLabel;
+
   const TAB_BAR_CONTENT_HEIGHT = 60;
   const dynamicTabBarStyle = {
     position: 'absolute' as const,
@@ -33,35 +43,35 @@ export default function TabLayout() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.onSurfaceVariant,
         tabBarShowLabel: true,
-        tabBarLabelStyle: styles.tabLabel,
+        tabBarLabelStyle: tabLabelStyle,
         tabBarIconStyle: styles.tabIcon,
       }}
     >
       <Tabs.Screen
         name="home"
         options={{
-          title: 'Home',
+          title: t('nav.home'),
           tabBarIcon: ({ color }) => <MaterialIcon name="home" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="orders"
         options={{
-          title: 'Orders',
+          title: t('nav.orders'),
           tabBarIcon: ({ color }) => <MaterialIcon name="receipt-long" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="ask-ematix"
         options={{
-          title: 'Ask Ematix',
+          title: t('nav.askEmatix'),
           tabBarIcon: ({ color }) => <MaterialIcon name="auto-awesome" size={24} color={color} />,
         }}
       />
       <Tabs.Screen
         name="profile"
         options={{
-          title: 'Profile',
+          title: t('nav.profile'),
           tabBarIcon: ({ color }) => <MaterialIcon name="account-circle" size={24} color={color} />,
         }}
       />

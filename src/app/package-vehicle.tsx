@@ -1,7 +1,8 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, Alert, KeyboardAvoidingView, Platform } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 import { PARCEL_VEHICLES } from '../data/mockData';
@@ -36,6 +37,7 @@ const calculateParcelFare = (dist: number, type: string, weight: string, serverC
 };
 
 export default function PackageVehicleScreen() {
+  const { t } = useTranslation();
   const { colors, isDark } = useTheme();
   const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
   const styles = createStyles(colors);
@@ -198,7 +200,17 @@ export default function PackageVehicleScreen() {
     <SafeAreaView style={styles.safeArea}>
       <SharedHeader currentScreen="package-vehicle" title="Package Delivery Details" />
 
-      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 10 : 0}
+      >
+        <ScrollView
+          contentContainerStyle={styles.contentContainer}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="on-drag"
+          showsVerticalScrollIndicator={false}
+        >
         {/* Map Preview */}
         <View style={{ height: 180, borderRadius: 16, overflow: 'hidden', marginHorizontal: 20, marginTop: 16 }}>
           <RealMap
@@ -227,16 +239,18 @@ export default function PackageVehicleScreen() {
             <View style={styles.timelineTextCol}>
               <View style={styles.stopRow}>
                 <View style={styles.stopHeader}>
-                  <Text style={styles.stopLabelBlue}>Pickup Point</Text>
+                  <Text style={styles.stopLabelBlue}>{t('package.pickupPoint')}</Text>
                   <View style={styles.stopSepDot} />
-                  <Text style={styles.stopSender}>Sender: Me</Text>
+                  <Text style={styles.stopSender}>{t('package.senderMe')}</Text>
                 </View>
                 <Text style={styles.stopAddress} numberOfLines={1}>{pickupAddr}</Text>
               </View>
               <View style={styles.stopRow}>
-                <Text style={styles.stopLabelRed}>Drop-off Point</Text>
+                <Text style={styles.stopLabelRed}>{t('package.dropoffPoint')}</Text>
                 <Text style={styles.stopAddress} numberOfLines={1}>{dropoffAddr}</Text>
-                <Text style={styles.stopReceiver} numberOfLines={1}>Receiver: {recipientName} • {recipientPhone}</Text>
+                <Text style={styles.stopReceiver} numberOfLines={1}>
+                  {t('package.receiverLabel', { name: recipientName })} • {recipientPhone}
+                </Text>
               </View>
             </View>
             <TouchableOpacity style={styles.routeToggleBtn} activeOpacity={0.85}>
@@ -256,17 +270,19 @@ export default function PackageVehicleScreen() {
             </View>
             <View style={styles.tagMuted}>
               <MaterialIcon name={isFragile ? "warning" : "verified"} size={14} color={colors.onSurfaceVariant} />
-              <Text style={styles.tagMutedText}>{isFragile ? 'Fragile' : 'Normal Handling'}</Text>
+              <Text style={styles.tagMutedText}>
+                {isFragile ? t('package.fragileBadge') : t('package.specs')}
+              </Text>
             </View>
           </View>
         </View>
 
         {/* Vehicle Selection */}
         <View style={styles.vehicleHeader}>
-          <Text style={styles.sectionTitle}>Choose Delivery Vehicle</Text>
+          <Text style={styles.sectionTitle}>{t('package.chooseVehicle')}</Text>
           <View style={styles.fastestBadge}>
             <MaterialIcon name="bolt" size={14} color={colors.primary} />
-            <Text style={styles.fastestText}>Fastest matching</Text>
+            <Text style={styles.fastestText}>{t('package.fastestMatching')}</Text>
           </View>
         </View>
         <View style={styles.vehicleList}>
@@ -297,13 +313,15 @@ export default function PackageVehicleScreen() {
                       </View>
                       <View style={styles.etaRow}>
                         <MaterialIcon name="schedule" size={15} color={isSelected ? colors.primary : colors.textMuted} />
-                        <Text style={[styles.etaText, isSelected && styles.etaTextActive]}>ETA {v.eta}</Text>
+                        <Text style={[styles.etaText, isSelected && styles.etaTextActive]}>
+                          {t('package.eta', { eta: v.eta })}
+                        </Text>
                       </View>
                     </View>
                   </View>
                   <View style={styles.priceCol}>
                     <Text style={[styles.priceValue, isSelected && styles.priceValueActive]}>₹{v.price}</Text>
-                    <Text style={styles.priceCaption}>Guaranteed fare</Text>
+                    <Text style={styles.priceCaption}>{t('package.guaranteedFare')}</Text>
                   </View>
                 </View>
                 <Text style={styles.vehicleDesc}>{v.description}</Text>
@@ -322,15 +340,15 @@ export default function PackageVehicleScreen() {
           <View style={styles.instructionsHeader}>
             <View style={styles.instructionsLabel}>
               <MaterialIcon name="edit-note" size={18} color={colors.primary} />
-              <Text style={styles.instructionsTitle}>Delivery Instructions</Text>
+              <Text style={styles.instructionsTitle}>{t('package.deliveryInstructions')}</Text>
             </View>
-            <Text style={styles.optionalTag}>Optional</Text>
+            <Text style={styles.optionalTag}>{t('common.optional')}</Text>
           </View>
           <TextInput
             style={styles.notesInput}
             multiline
             numberOfLines={2}
-            placeholder="Add delivery note or gate code..."
+            placeholder={t('package.instructionsPlaceholder')}
             placeholderTextColor={colors.outline}
             value={notes}
             onChangeText={setNotes}
@@ -354,31 +372,32 @@ export default function PackageVehicleScreen() {
           <View style={styles.fareHeader}>
             <View style={styles.fareLabelRow}>
               <MaterialIcon name="receipt-long" size={16} color={colors.primary} />
-              <Text style={styles.fareLabel}>Fare Breakdown</Text>
+              <Text style={styles.fareLabel}>{t('package.fareBreakdown')}</Text>
             </View>
-            <Text style={styles.noSurgeText}>No surge pricing</Text>
+            <Text style={styles.noSurgeText}>{t('package.noSurge')}</Text>
           </View>
           <View style={styles.fareLines}>
             <View style={styles.fareLine}>
-              <Text style={styles.fareLineLabel}>Base Fare</Text>
+              <Text style={styles.fareLineLabel}>{t('package.baseFare')}</Text>
               <Text style={styles.fareLineValue}>₹{vehicle.baseFare}</Text>
             </View>
             <View style={styles.fareLine}>
-              <Text style={styles.fareLineLabel}>Distance Charge (RA Puram → Indiranagar)</Text>
+              <Text style={styles.fareLineLabel}>{t('package.distanceCharge')}</Text>
               <Text style={styles.fareLineValue}>₹{vehicle.distanceCharge}</Text>
             </View>
             <View style={styles.fareLine}>
-              <Text style={styles.fareLineLabel}>Package Protection & Safety</Text>
-              <Text style={styles.fareFree}>FREE</Text>
+              <Text style={styles.fareLineLabel}>{t('package.protectionSafety')}</Text>
+              <Text style={styles.fareFree}>{t('common.free')}</Text>
             </View>
           </View>
           <View style={styles.fareDivider} />
           <View style={styles.fareTotalRow}>
-            <Text style={styles.fareTotalLabel}>Total Estimated Fare</Text>
+            <Text style={styles.fareTotalLabel}>{t('package.totalEstimatedFare')}</Text>
             <Text style={styles.fareTotalValue}>₹{vehicle.price}</Text>
           </View>
         </View>
-      </ScrollView>
+        </ScrollView>
+      </KeyboardAvoidingView>
 
       {/* Bottom Action Dock */}
       <View style={styles.bottomDock}>
@@ -405,7 +424,9 @@ export default function PackageVehicleScreen() {
           activeOpacity={0.95}
           onPress={requestParcel}
         >
-          <Text style={styles.ctaText}>Continue to Delivery Summary — ₹{vehicle.price}</Text>
+          <Text style={styles.ctaText}>
+            {t('package.continueToSummary', { price: vehicle.price })}
+          </Text>
           <MaterialIcon name="arrow-forward" size={20} color={colors.onPrimary} />
         </TouchableOpacity>
       </View>
@@ -417,6 +438,9 @@ const createStyles = (colors: any) => StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.surface,
+  },
+  flex: {
+    flex: 1,
   },
   contentContainer: {
     paddingTop: 12,

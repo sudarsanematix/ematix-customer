@@ -2,10 +2,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Switch } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon, { MaterialIconName } from '../components/MaterialIcon';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type, spacing, radius } from '../theme/typography';
+import { useAuth } from '../context/AuthContext';
+import { authedFetch } from '../utils/api';
+import { changeAppLanguage } from '../i18n';
+import { SUPPORTED_LANGUAGES, type AppLanguage } from '../i18n/languages';
 
 function Row({
   icon,
@@ -68,6 +73,8 @@ export default function SettingsScreen() {
   const router = useRouter();
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = createStyles(colors);
+  const { t, i18n } = useTranslation();
+  const { token, login } = useAuth();
 
   const [notifPrefs, setNotifPrefs] = useState({
     rides: true,
@@ -78,70 +85,85 @@ export default function SettingsScreen() {
   const [prefs, setPrefs] = useState({
     receipts: true,
     shareLive: false,
-    language: 'English',
   });
+
+  // The language lives in the i18n singleton rather than in local state: it
+  // has to change every screen at once, and it has to survive a restart. The
+  // account copy is written afterwards and never blocks the switch.
+  const activeLanguage = (i18n.language.split('-')[0] || 'en') as AppLanguage;
+
+  const selectLanguage = async (language: AppLanguage) => {
+    await changeAppLanguage(language, async (code) => {
+      if (!token) return;
+      const data = await authedFetch('/api/profile/customer/preferences', token, {
+        method: 'PUT',
+        body: { language: code },
+      });
+      if (data?.user) await login(data.user, token);
+    });
+  };
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SharedHeader currentScreen="settings" title="Settings" />
+      <SharedHeader currentScreen="settings" />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Text style={styles.groupTitle}>Appearance</Text>
+        <Text style={styles.groupTitle}>{t('settings.groupAppearance')}</Text>
         <View style={styles.group}>
           <Row
             icon={isDark ? 'light-mode' : 'dark-mode'}
-            label="Use dark theme"
-            sublabel={isDark ? 'Dark mode is on' : 'Switch to a darker look'}
+            label={t('settings.useDarkTheme')}
+            sublabel={isDark ? t('profile.darkModeOn') : t('profile.darkModeHint')}
             value={isDark}
             onValueChange={toggleTheme}
             last
           />
         </View>
 
-        <Text style={styles.groupTitle}>Notifications</Text>
+        <Text style={styles.groupTitle}>{t('settings.groupNotifications')}</Text>
         <View style={styles.group}>
-          <Row icon="local-taxi" label="Ride updates" sublabel="Booking, driver & fare alerts" value={notifPrefs.rides} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, rides: v }))} />
-          <Row icon="inventory-2" label="Delivery updates" sublabel="Pickup, transit & drop-off alerts" value={notifPrefs.deliveries} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, deliveries: v }))} />
-          <Row icon="local-offer" label="Offers & promos" sublabel="Discounts and cashback" value={notifPrefs.offers} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, offers: v }))} />
-          <Row icon="shield" label="Safety alerts" sublabel="Route & emergency notifications" value={notifPrefs.safety} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, safety: v }))} last />
+          <Row icon="local-taxi" label={t('settings.notifRides')} sublabel={t('profile.notifRidesSublabel')} value={notifPrefs.rides} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, rides: v }))} />
+          <Row icon="inventory-2" label={t('settings.notifDeliveries')} sublabel={t('profile.notifDeliveriesSublabel')} value={notifPrefs.deliveries} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, deliveries: v }))} />
+          <Row icon="local-offer" label={t('settings.notifOffers')} sublabel={t('profile.notifOffersSublabel')} value={notifPrefs.offers} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, offers: v }))} />
+          <Row icon="shield" label={t('settings.notifSafety')} sublabel={t('profile.notifSafetySublabel')} value={notifPrefs.safety} onValueChange={(v) => setNotifPrefs((s) => ({ ...s, safety: v }))} last />
         </View>
 
-        <Text style={styles.groupTitle}>Language</Text>
+        <Text style={styles.groupTitle}>{t('settings.groupLanguage')}</Text>
         <View style={styles.group}>
           <View style={styles.langRow}>
-            {['English', 'தமிழ்', 'हिन्दी'].map((lang) => (
+            {SUPPORTED_LANGUAGES.map((lang) => (
               <TouchableOpacity
-                key={lang}
-                style={[styles.langChip, prefs.language === lang && styles.langChipActive]}
+                key={lang.code}
+                style={[styles.langChip, activeLanguage === lang.code && styles.langChipActive]}
                 activeOpacity={0.85}
-                onPress={() => setPrefs((s) => ({ ...s, language: lang }))}
+                onPress={() => selectLanguage(lang.code)}
               >
-                <Text style={[styles.langChipText, prefs.language === lang && styles.langChipTextActive]}>{lang}</Text>
+                <Text style={[styles.langChipText, activeLanguage === lang.code && styles.langChipTextActive]}>{lang.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
         </View>
 
-        <Text style={styles.groupTitle}>Ride & Privacy</Text>
+        <Text style={styles.groupTitle}>{t('settings.groupPrivacy')}</Text>
         <View style={styles.group}>
-          <Row icon="insert-drive-file" label="Send trip receipts on WhatsApp" sublabel="After every ride & delivery" value={prefs.receipts} onValueChange={(v) => setPrefs((s) => ({ ...s, receipts: v }))} />
-          <Row icon="my-location" label="Share live location during rides" sublabel="Only with your emergency contacts" value={prefs.shareLive} onValueChange={(v) => setPrefs((s) => ({ ...s, shareLive: v }))} last />
+          <Row icon="insert-drive-file" label={t('profile.receiptsWhatsapp')} sublabel={t('profile.receiptsSublabel')} value={prefs.receipts} onValueChange={(v) => setPrefs((s) => ({ ...s, receipts: v }))} />
+          <Row icon="my-location" label={t('profile.shareLiveLocation')} sublabel={t('profile.shareLiveSublabel')} value={prefs.shareLive} onValueChange={(v) => setPrefs((s) => ({ ...s, shareLive: v }))} last />
         </View>
 
-        <Text style={styles.groupTitle}>Support & Legal</Text>
+        <Text style={styles.groupTitle}>{t('settings.groupLegal')}</Text>
         <View style={styles.group}>
-          <Row icon="help-outline" label="Help Center" sublabel="FAQs & 24x7 support" onPress={() => router.push('/notifications')} />
-          <Row icon="description" label="Terms of Service" onPress={() => router.back()} />
-          <Row icon="privacy-tip" label="Privacy Policy" onPress={() => router.back()} />
-          <Row icon="verified-user" label="About Ematix" sublabel="Version 1.0.0" onPress={() => router.back()} last />
+          <Row icon="help-outline" label={t('nav.helpCenter')} sublabel={t('profile.helpSublabel')} onPress={() => router.push('/notifications')} />
+          <Row icon="description" label={t('auth.termsOfService')} onPress={() => router.back()} />
+          <Row icon="privacy-tip" label={t('auth.privacyPolicy')} onPress={() => router.back()} />
+          <Row icon="verified-user" label={t('settings.aboutEmatix')} sublabel={t('profile.versionSublabel')} onPress={() => router.back()} last />
         </View>
 
         <TouchableOpacity style={styles.logoutBtn} activeOpacity={0.85} onPress={() => router.replace('/login')}>
           <MaterialIcon name="logout" size={18} color={colors.accentRed} />
-          <Text style={styles.logoutText}>Sign Out</Text>
+          <Text style={styles.logoutText}>{t('common.signOut')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.versionText}>Ematix v1.0.0</Text>
+        <Text style={styles.versionText}>{t('common.appVersion')}</Text>
       </ScrollView>
     </SafeAreaView>
   );

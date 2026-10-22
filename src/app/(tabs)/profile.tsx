@@ -13,32 +13,19 @@ import {
   Platform,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../../theme/ThemeProvider';
 import { fonts, type, spacing, radius } from '../../theme/typography';
 import SharedHeader from '../../components/SharedHeader';
 import MaterialIcon from '../../components/MaterialIcon';
 import { useAuth } from '../../context/AuthContext';
 import { authedFetch } from '../../utils/api';
+import { changeAppLanguage } from '../../i18n';
+import { SUPPORTED_LANGUAGES, type AppLanguage } from '../../i18n/languages';
 
 // Number formatting for the stat tiles. `toLocaleString` keeps the thousands
 // separators the old mock values used to carry.
 const formatCount = (n: number) => n.toLocaleString('en-IN');
-
-// Mock data for FAQs
-const FAQS = [
-  {
-    q: 'How do I book a ride with Ematix?',
-    a: 'Tap "Book a Ride" on the home screen, choose pickup & drop-off, then pick an Auto or Cab and confirm your fare.',
-  },
-  {
-    q: 'Can Ematix deliver a parcel for me?',
-    a: 'Yes. Choose "Send Parcel", set the package details and a Two-wheeler or Auto will handle it door-to-door with live tracking.',
-  },
-  {
-    q: 'How does Ask Ematix plan trips?',
-    a: 'Tell it your destination or weekend plan and it builds a stop-by-stop itinerary with suggested vehicles and fares — each leg bookable in one tap.',
-  },
-] as const;
 
 type SheetId =
   | 'edit'
@@ -150,7 +137,16 @@ export default function ProfileScreen() {
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
+  const { t, i18n } = useTranslation();
   const { user, token, logout, login, refresh, stats, rating, isRefreshing } = useAuth();
+
+  // The FAQs are copy rather than data, so they are read from the dictionary
+  // at render time instead of being frozen at module load.
+  const faqs = [
+    { q: t('profile.faqBookRideQ'), a: t('profile.faqBookRideA') },
+    { q: t('profile.faqParcelQ'), a: t('profile.faqParcelA') },
+    { q: t('profile.faqAskQ'), a: t('profile.faqAskA') },
+  ];
 
   const [sheet, setSheet] = useState<SheetId>(null);
   const [logoutOpen, setLogoutOpen] = useState(false);
@@ -180,7 +176,7 @@ export default function ProfileScreen() {
   const [prefs, setPrefs] = useState({
     receipts: true,
     shareLive: false,
-    language: 'English',
+    language: 'en' as AppLanguage,
   });
 
   // Adopt the persisted preferences whenever a new server copy arrives. This
@@ -210,11 +206,11 @@ export default function ProfileScreen() {
     refresh();
   }, [refresh]);
 
-  const userName = user?.name || 'Guest';
-  const userPhone = user?.phone || 'No phone set';
+  const userName = user?.name || t('common.guest');
+  const userPhone = user?.phone || t('profile.noPhone');
   const [payments, setPayments] = useState([
-    { id: 'card', type: 'card' as const, title: 'HDFC Visa \u2022\u2022\u2022\u2022 4829', sub: 'Expires 08 / 27' },
-    { id: 'upi', type: 'upi' as const, title: 'UPI \u2022 alex@okhdfc', sub: 'Default payment method' },
+    { id: 'card', type: 'card' as const, title: 'HDFC Visa \u2022\u2022\u2022\u2022 4829', sub: t('profile.paymentExpires', { date: '08 / 27' }) },
+    { id: 'upi', type: 'upi' as const, title: 'UPI \u2022 alex@okhdfc', sub: t('profile.defaultPaymentMethod') },
   ]);
   const [faqOpen, setFaqOpen] = useState<number | null>(0);
 
@@ -225,7 +221,7 @@ export default function ProfileScreen() {
 
   const removePayment = (id: string) => {
     setPayments((p) => p.filter((x) => x.id !== id));
-    showToast('Payment method removed');
+    showToast(t('profile.paymentMethodRemoved'));
   };
 
   const saveProfile = async () => {
@@ -239,10 +235,10 @@ export default function ProfileScreen() {
       if (data?.user) {
         await login(data.user, token);
         setSheet(null);
-        showToast('Profile updated');
+        showToast(t('profile.profileUpdated'));
       }
     } catch (e) {
-      showToast(e instanceof Error ? e.message : 'Failed to update profile');
+      showToast(e instanceof Error ? e.message : t('errors.couldNotSaveProfile'));
     } finally {
       setSavingProfile(false);
     }
@@ -259,7 +255,7 @@ export default function ProfileScreen() {
       });
       if (data?.user) await login(data.user, token);
     } catch {
-      showToast('Could not save preference');
+      showToast(t('errors.couldNotSavePreference'));
       refresh();
     }
   };
@@ -272,18 +268,34 @@ export default function ProfileScreen() {
     });
   };
 
-  const setPref = (key: 'receipts' | 'shareLive' | 'language', value: boolean | string) => {
+  const setPref = (key: 'receipts' | 'shareLive', value: boolean) => {
     setPrefs((s) => {
       const next = { ...s, [key]: value };
-      if (key === 'language') persistPreferences({ language: value });
-      else persistPreferences({ [key === 'shareLive' ? 'shareLiveLocation' : key]: value });
+      persistPreferences({ [key === 'shareLive' ? 'shareLiveLocation' : key]: value });
       return next;
+    });
+  };
+
+  // The language is owned by the i18n singleton, so the chip reflects what is
+  // on screen rather than what the account happens to hold. The account copy
+  // is written after the switch and never holds it up.
+  const activeLanguage = (i18n.language.split('-')[0] || 'en') as AppLanguage;
+
+  const selectLanguage = async (language: AppLanguage) => {
+    setPrefs((s) => ({ ...s, language }));
+    await changeAppLanguage(language, async (code) => {
+      if (!token) return;
+      const data = await authedFetch('/api/profile/customer/preferences', token, {
+        method: 'PUT',
+        body: { language: code },
+      });
+      if (data?.user) await login(data.user, token);
     });
   };
 
   const saveNewAddress = async () => {
     if (!newAddressName.trim() || !newAddressText.trim()) {
-      showToast('Name and Address are required');
+      showToast(t('profile.addressRequired'));
       return;
     }
 
@@ -313,12 +325,12 @@ export default function ProfileScreen() {
         setAddAddressVisible(false);
         setNewAddressName('');
         setNewAddressText('');
-        showToast('Address saved');
+        showToast(t('profile.addressSaved'));
       } else {
-        showToast('Failed to save address');
+        showToast(t('errors.couldNotSaveAddress'));
       }
     } catch {
-      showToast('Network error');
+      showToast(t('errors.networkShort'));
     }
   };
 
@@ -332,16 +344,16 @@ export default function ProfileScreen() {
       });
       if (data?.success && data.user && token) {
         await login(data.user, token);
-        showToast('Address removed');
+        showToast(t('profile.addressRemoved'));
       }
     } catch {
-      showToast('Network error');
+      showToast(t('errors.networkShort'));
     }
   };
 
   const saveNewContact = async () => {
     if (!newContactName.trim() || !newContactPhone.trim()) {
-      showToast('Name and Phone are required');
+      showToast(t('profile.contactRequired'));
       return;
     }
     try {
@@ -357,12 +369,12 @@ export default function ProfileScreen() {
         setNewContactName('');
         setNewContactRelation('');
         setNewContactPhone('');
-        showToast('Contact saved');
+        showToast(t('profile.contactSaved'));
       } else {
-        showToast('Failed to save contact');
+        showToast(t('errors.couldNotSaveContact'));
       }
     } catch {
-      showToast('Network error');
+      showToast(t('errors.networkShort'));
     }
   };
 
@@ -376,10 +388,10 @@ export default function ProfileScreen() {
       });
       if (data?.success && data.user && token) {
         await login(data.user, token);
-        showToast('Contact removed');
+        showToast(t('profile.contactRemoved'));
       }
     } catch {
-      showToast('Network error');
+      showToast(t('errors.networkShort'));
     }
   };
 
@@ -402,7 +414,7 @@ export default function ProfileScreen() {
             {rating?.rating != null ? (
               <View style={styles.ratingWrap}>
                 <MaterialIcon name="star" size={13} color="#f4b400" />
-                <Text style={styles.ratingText}>{rating.rating.toFixed(1)} rated</Text>
+                <Text style={styles.ratingText}>{t('profile.rated', { rating: rating.rating.toFixed(1) })}</Text>
               </View>
             ) : null}
           </View>
@@ -418,9 +430,9 @@ export default function ProfileScreen() {
         {/* Stats */}
         <View style={styles.statsRow}>
           {([
-            { label: 'Trips', value: stats?.rides, icon: 'local-taxi' },
-            { label: 'Deliveries', value: stats?.deliveries, icon: 'inventory-2' },
-            { label: 'Total Spent', value: stats?.lifetimeSpend, icon: 'account-balance-wallet', prefix: '\u20b9' },
+            { label: t('profile.statTrips'), value: stats?.rides, icon: 'local-taxi' },
+            { label: t('profile.statDeliveries'), value: stats?.deliveries, icon: 'inventory-2' },
+            { label: t('profile.statTotalSpent'), value: stats?.lifetimeSpend, icon: 'account-balance-wallet', prefix: '\u20b9' },
           ] as const).map((s) => (
             <View key={s.label} style={styles.statTile}>
               <MaterialIcon name={s.icon} size={20} color={colors.primary} />
@@ -434,30 +446,30 @@ export default function ProfileScreen() {
 
         {/* Account */}
         <View style={styles.optionsGroup}>
-          <Text style={styles.groupTitle}>Account</Text>
-          <Row icon="account-balance-wallet" label="Wallet" sublabel="Balance & top-up" onPress={() => router.push('/wallet')} />
-          <Row icon="credit-card" label="Payment Methods" sublabel={payments.length ? `${payments.length} linked` : 'None'} onPress={() => setSheet('payments')} />
-          <Row icon="location-on" label="Saved Addresses" sublabel={`${user?.savedLocations?.length || 0} saved`} onPress={() => setSheet('addresses')} />
-          <Row icon="notifications-none" label="Notifications" onPress={() => setSheet('notifications')} />
-          <Row icon="settings" label="Settings" sublabel="Appearance, language & more" onPress={() => router.push('/settings')} last />
+          <Text style={styles.groupTitle}>{t('profile.groupAccount')}</Text>
+          <Row icon="account-balance-wallet" label={t('nav.wallet')} sublabel={t('profile.walletSublabel')} onPress={() => router.push('/wallet')} />
+          <Row icon="credit-card" label={t('wallet.paymentMethods')} sublabel={payments.length ? t('profile.paymentsLinked', { count: payments.length }) : t('profile.noneLinked')} onPress={() => setSheet('payments')} />
+          <Row icon="location-on" label={t('profile.savedAddresses')} sublabel={t('profile.addressesSaved', { count: user?.savedLocations?.length || 0 })} onPress={() => setSheet('addresses')} />
+          <Row icon="notifications-none" label={t('nav.notifications')} onPress={() => setSheet('notifications')} />
+          <Row icon="settings" label={t('nav.settings')} sublabel={t('profile.settingsSublabel')} onPress={() => router.push('/settings')} last />
         </View>
 
         {/* Safety & Support */}
         <View style={styles.optionsGroup}>
-          <Text style={styles.groupTitle}>Safety & Support</Text>
-          <Row icon="shield" label="Emergency Contacts" sublabel={`${user?.emergencyContacts?.length || 0} added`} onPress={() => setSheet('emergency')} />
-          <Row icon="help-outline" label="Help Center" onPress={() => setSheet('help')} />
-          <Row icon="tune" label="Preferences" onPress={() => setSheet('preferences')} last />
+          <Text style={styles.groupTitle}>{t('profile.groupSafety')}</Text>
+          <Row icon="shield" label={t('profile.emergencyContacts')} sublabel={t('profile.contactsAdded', { count: user?.emergencyContacts?.length || 0 })} onPress={() => setSheet('emergency')} />
+          <Row icon="help-outline" label={t('nav.helpCenter')} onPress={() => setSheet('help')} />
+          <Row icon="tune" label={t('profile.groupPreferences')} onPress={() => setSheet('preferences')} last />
         </View>
 
         {/* Invite / Rewards banner */}
-        <TouchableOpacity style={styles.rewardsCard} activeOpacity={0.85} onPress={() => showToast('Referral code copied: ALEX120')}>
+        <TouchableOpacity style={styles.rewardsCard} activeOpacity={0.85} onPress={() => showToast(t('profile.referralCopied'))}>
           <View style={styles.rewardsIconWrap}>
             <MaterialIcon name="card-giftcard" size={22} color={colors.onPrimary} />
           </View>
           <View style={styles.rewardsTextWrap}>
-            <Text style={styles.rewardsTitle}>Invite friends, earn ₹120</Text>
-            <Text style={styles.rewardsSub}>Give ₹50 & get ₹120 on their first ride</Text>
+            <Text style={styles.rewardsTitle}>{t('profile.referralTitle')}</Text>
+            <Text style={styles.rewardsSub}>{t('profile.referralSub')}</Text>
           </View>
           <MaterialIcon name="chevron-right" size={20} color={colors.onSurfaceVariant} />
         </TouchableOpacity>
@@ -467,55 +479,53 @@ export default function ProfileScreen() {
           router.replace('/login');
         }}>
           <MaterialIcon name="logout" size={18} color={colors.accentRed} />
-          <Text style={styles.logoutText}>Log Out</Text>
+          <Text style={styles.logoutText}>{t('common.logOut')}</Text>
         </TouchableOpacity>
 
-        <Text style={styles.versionText}>Ematix v1.0.0</Text>
+        <Text style={styles.versionText}>{t('common.appVersion')}</Text>
       </ScrollView>
 
       {/* Edit Profile */}
-      <Sheet visible={sheet === 'edit'} title="Edit Profile" onClose={() => setSheet(null)}>
-        <Text style={styles.fieldLabel}>Full name</Text>
+      <Sheet visible={sheet === 'edit'} title={t('profile.editProfile')} onClose={() => setSheet(null)}>
+        <Text style={styles.fieldLabel}>{t('profile.fullName')}</Text>
         <TextInput
           style={styles.input}
           value={editName}
           onChangeText={setEditName}
-          placeholder="Full name"
+          placeholder={t('profile.fullName')}
           placeholderTextColor={colors.textMuted}
         />
-        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Email</Text>
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>{t('profile.email')}</Text>
         <TextInput
           style={styles.input}
           value={editEmail}
           onChangeText={setEditEmail}
-          placeholder="you@example.com"
+          placeholder={t('auth.emailPlaceholder')}
           placeholderTextColor={colors.textMuted}
           keyboardType="email-address"
           autoCapitalize="none"
         />
-        <Text style={styles.fieldLabel}>Mobile number</Text>
+        <Text style={styles.fieldLabel}>{t('profile.mobileNumber')}</Text>
         {/* Phone is the login handle and the unique account key, so it cannot
             be changed from here. */}
         <View style={[styles.input, styles.readOnlyInput]}>
           <Text style={styles.readOnlyText}>{userPhone}</Text>
         </View>
-        <Text style={styles.readOnlyHint}>
-          Your mobile number is used to sign in and cannot be changed here.
-        </Text>
+        <Text style={styles.readOnlyHint}>{t('profile.mobileReadOnly')}</Text>
         <TouchableOpacity
           style={styles.primaryBtn}
           activeOpacity={0.85}
           onPress={saveProfile}
           disabled={savingProfile}
         >
-          <Text style={styles.primaryBtnText}>{savingProfile ? 'Saving...' : 'Save changes'}</Text>
+          <Text style={styles.primaryBtnText}>{savingProfile ? t('common.saving') : t('profile.saveChanges')}</Text>
         </TouchableOpacity>
       </Sheet>
 
       {/* Payment Methods */}
-      <Sheet visible={sheet === 'payments'} title="Payment Methods" onClose={() => setSheet(null)}>
+      <Sheet visible={sheet === 'payments'} title={t('wallet.paymentMethods')} onClose={() => setSheet(null)}>
         {payments.length === 0 ? (
-          <Text style={styles.emptyText}>No payment methods added yet.</Text>
+          <Text style={styles.emptyText}>{t('profile.noPaymentMethods')}</Text>
         ) : (
           payments.map((p) => (
             <View key={p.id} style={styles.paymentCard}>
@@ -529,7 +539,7 @@ export default function ProfileScreen() {
                 </View>
               </View>
               <TouchableOpacity activeOpacity={0.8} onPress={() => removePayment(p.id)} hitSlop={8}>
-                <Text style={styles.removeText}>Remove</Text>
+                <Text style={styles.removeText}>{t('common.remove')}</Text>
               </TouchableOpacity>
             </View>
           ))
@@ -537,15 +547,15 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.addBtn}
           activeOpacity={0.85}
-          onPress={() => showToast('New payment method coming soon')}
+          onPress={() => showToast(t('profile.newPaymentMethodSoon'))}
         >
           <MaterialIcon name="add" size={18} color={colors.primary} />
-          <Text style={styles.addBtnText}>Add payment method</Text>
+          <Text style={styles.addBtnText}>{t('profile.addPaymentMethod')}</Text>
         </TouchableOpacity>
       </Sheet>
 
       {/* Saved Addresses */}
-      <Sheet visible={sheet === 'addresses'} title="Saved Addresses" onClose={() => setSheet(null)}>
+      <Sheet visible={sheet === 'addresses'} title={t('profile.savedAddresses')} onClose={() => setSheet(null)}>
         {user?.savedLocations?.map((p: any, i: number) => (
           <View key={p.name + i} style={styles.addressCard}>
             <View style={styles.addressIconWrap}>
@@ -556,40 +566,40 @@ export default function ProfileScreen() {
               <Text style={styles.paymentSub}>{p.address}</Text>
             </View>
             <TouchableOpacity style={styles.defaultBtn} activeOpacity={0.85} onPress={() => removeAddress(p.name)}>
-              <Text style={styles.removeText}>Remove</Text>
+              <Text style={styles.removeText}>{t('common.remove')}</Text>
             </TouchableOpacity>
           </View>
         ))}
         {(!user?.savedLocations || user.savedLocations.length === 0) && (
-          <Text style={styles.emptyText}>No saved addresses yet.</Text>
+          <Text style={styles.emptyText}>{t('profile.noSavedAddresses')}</Text>
         )}
         <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => { setSheet(null); setAddAddressVisible(true); }}>
           <MaterialIcon name="add" size={18} color={colors.primary} />
-          <Text style={styles.addBtnText}>Add new address</Text>
+          <Text style={styles.addBtnText}>{t('profile.addNewAddress')}</Text>
         </TouchableOpacity>
       </Sheet>
 
       {/* Add Address Form */}
-      <Sheet visible={addAddressVisible} title="Add Address" onClose={() => setAddAddressVisible(false)}>
-        <Text style={styles.fieldLabel}>Name (e.g., Home, Work)</Text>
-        <TextInput style={styles.input} value={newAddressName} onChangeText={setNewAddressName} placeholder="Home" placeholderTextColor={colors.textMuted} />
-        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Address</Text>
-        <TextInput style={styles.input} value={newAddressText} onChangeText={setNewAddressText} placeholder="123 Main St..." placeholderTextColor={colors.textMuted} />
+      <Sheet visible={addAddressVisible} title={t('profile.addAddress')} onClose={() => setAddAddressVisible(false)}>
+        <Text style={styles.fieldLabel}>{t('profile.addressNameLabel')}</Text>
+        <TextInput style={styles.input} value={newAddressName} onChangeText={setNewAddressName} placeholder={t('home.homeTag')} placeholderTextColor={colors.textMuted} />
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>{t('profile.address')}</Text>
+        <TextInput style={styles.input} value={newAddressText} onChangeText={setNewAddressText} placeholder={t('profile.addressPlaceholder')} placeholderTextColor={colors.textMuted} />
         <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={saveNewAddress}>
-          <Text style={styles.primaryBtnText}>Save Address</Text>
+          <Text style={styles.primaryBtnText}>{t('profile.saveAddress')}</Text>
         </TouchableOpacity>
       </Sheet>
 
       {/* Notifications */}
-      <Sheet visible={sheet === 'notifications'} title="Notifications" onClose={() => setSheet(null)}>
-        <ToggleRow label="Ride updates" sublabel="Booking, driver & fare alerts" value={notifPrefs.rides} onValueChange={(v) => setNotifPref('rides', v)} />
-        <ToggleRow label="Delivery updates" sublabel="Pickup, transit & drop-off alerts" value={notifPrefs.deliveries} onValueChange={(v) => setNotifPref('deliveries', v)} />
-        <ToggleRow label="Offers & promos" sublabel="Discounts and cashback" value={notifPrefs.offers} onValueChange={(v) => setNotifPref('offers', v)} />
-        <ToggleRow label="Safety alerts" sublabel="Route & emergency notifications" value={notifPrefs.safety} onValueChange={(v) => setNotifPref('safety', v)} />
+      <Sheet visible={sheet === 'notifications'} title={t('nav.notifications')} onClose={() => setSheet(null)}>
+        <ToggleRow label={t('settings.notifRides')} sublabel={t('profile.notifRidesSublabel')} value={notifPrefs.rides} onValueChange={(v) => setNotifPref('rides', v)} />
+        <ToggleRow label={t('settings.notifDeliveries')} sublabel={t('profile.notifDeliveriesSublabel')} value={notifPrefs.deliveries} onValueChange={(v) => setNotifPref('deliveries', v)} />
+        <ToggleRow label={t('settings.notifOffers')} sublabel={t('profile.notifOffersSublabel')} value={notifPrefs.offers} onValueChange={(v) => setNotifPref('offers', v)} />
+        <ToggleRow label={t('settings.notifSafety')} sublabel={t('profile.notifSafetySublabel')} value={notifPrefs.safety} onValueChange={(v) => setNotifPref('safety', v)} />
       </Sheet>
 
       {/* Emergency Contacts */}
-      <Sheet visible={sheet === 'emergency'} title="Emergency Contacts" onClose={() => setSheet(null)}>
+      <Sheet visible={sheet === 'emergency'} title={t('profile.emergencyContacts')} onClose={() => setSheet(null)}>
         {user?.emergencyContacts?.map((c: any, i: number) => (
           <View key={c.phone + i} style={[styles.paymentCard, styles.optionRowLast]}>
             <View style={styles.avatarWrapSm}>
@@ -600,41 +610,39 @@ export default function ProfileScreen() {
               <Text style={styles.paymentSub}>{c.relation} \u2022 {c.phone}</Text>
             </View>
             <TouchableOpacity activeOpacity={0.8} onPress={() => removeContact(c.phone)} hitSlop={8}>
-              <Text style={styles.removeText}>Remove</Text>
+              <Text style={styles.removeText}>{t('common.remove')}</Text>
             </TouchableOpacity>
           </View>
         ))}
         {(!user?.emergencyContacts || user.emergencyContacts.length === 0) && (
-          <Text style={styles.emptyText}>No emergency contacts added yet.</Text>
+          <Text style={styles.emptyText}>{t('profile.noEmergencyContacts')}</Text>
         )}
         <TouchableOpacity style={styles.addBtn} activeOpacity={0.85} onPress={() => { setSheet(null); setAddContactVisible(true); }}>
           <MaterialIcon name="add" size={18} color={colors.primary} />
-          <Text style={styles.addBtnText}>Add emergency contact</Text>
+          <Text style={styles.addBtnText}>{t('profile.addEmergencyContact')}</Text>
         </TouchableOpacity>
         <View style={styles.safetyNote}>
           <MaterialIcon name="warning" size={16} color={colors.accentRed} />
-          <Text style={styles.safetyNoteText}>
-            In an active ride, Shakti SOS shares your live location with these contacts.
-          </Text>
+          <Text style={styles.safetyNoteText}>{t('profile.sosNote')}</Text>
         </View>
       </Sheet>
 
       {/* Add Contact Form */}
-      <Sheet visible={addContactVisible} title="Add Contact" onClose={() => setAddContactVisible(false)}>
-        <Text style={styles.fieldLabel}>Name</Text>
-        <TextInput style={styles.input} value={newContactName} onChangeText={setNewContactName} placeholder="Jane Doe" placeholderTextColor={colors.textMuted} />
-        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Relation</Text>
-        <TextInput style={styles.input} value={newContactRelation} onChangeText={setNewContactRelation} placeholder="Friend, Sister, etc." placeholderTextColor={colors.textMuted} />
-        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>Phone Number</Text>
-        <TextInput style={styles.input} value={newContactPhone} onChangeText={setNewContactPhone} placeholder="+91 9876543210" placeholderTextColor={colors.textMuted} keyboardType="phone-pad" />
+      <Sheet visible={addContactVisible} title={t('profile.addContact')} onClose={() => setAddContactVisible(false)}>
+        <Text style={styles.fieldLabel}>{t('profile.name')}</Text>
+        <TextInput style={styles.input} value={newContactName} onChangeText={setNewContactName} placeholder={t('profile.namePlaceholder')} placeholderTextColor={colors.textMuted} />
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>{t('profile.relation')}</Text>
+        <TextInput style={styles.input} value={newContactRelation} onChangeText={setNewContactRelation} placeholder={t('profile.relationPlaceholder')} placeholderTextColor={colors.textMuted} />
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackMd }]}>{t('profile.phoneNumber')}</Text>
+        <TextInput style={styles.input} value={newContactPhone} onChangeText={setNewContactPhone} placeholder={t('profile.phonePlaceholder')} placeholderTextColor={colors.textMuted} keyboardType="phone-pad" />
         <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={saveNewContact}>
-          <Text style={styles.primaryBtnText}>Save Contact</Text>
+          <Text style={styles.primaryBtnText}>{t('profile.saveContact')}</Text>
         </TouchableOpacity>
       </Sheet>
 
       {/* Help Center */}
-      <Sheet visible={sheet === 'help'} title="Help Center" onClose={() => setSheet(null)}>
-        {FAQS.map((f, i) => {
+      <Sheet visible={sheet === 'help'} title={t('nav.helpCenter')} onClose={() => setSheet(null)}>
+        {faqs.map((f, i) => {
           const open = faqOpen === i;
           return (
             <View key={f.q} style={styles.faqItem}>
@@ -647,37 +655,37 @@ export default function ProfileScreen() {
           );
         })}
         <TouchableOpacity style={styles.primaryBtn} activeOpacity={0.85} onPress={() => { setSheet(null); router.push('/support'); }}>
-          <Text style={styles.primaryBtnText}>Contact support</Text>
+          <Text style={styles.primaryBtnText}>{t('profile.contactSupport')}</Text>
         </TouchableOpacity>
       </Sheet>
 
       {/* Preferences */}
-      <Sheet visible={sheet === 'preferences'} title="Preferences" onClose={() => setSheet(null)}>
-        <Text style={styles.fieldLabel}>Appearance</Text>
+      <Sheet visible={sheet === 'preferences'} title={t('profile.groupPreferences')} onClose={() => setSheet(null)}>
+        <Text style={styles.fieldLabel}>{t('settings.groupAppearance')}</Text>
         <View style={{ marginTop: spacing.stackSm }}>
           <ToggleRow
-            label={`Use dark theme`}
-            sublabel={isDark ? 'Dark mode is on' : 'Switch to a darker look'}
+            label={t('settings.useDarkTheme')}
+            sublabel={isDark ? t('profile.darkModeOn') : t('profile.darkModeHint')}
             value={isDark}
             onValueChange={toggleTheme}
           />
         </View>
-        <Text style={[styles.fieldLabel, { marginTop: spacing.stackLg }]}>App language</Text>
+        <Text style={[styles.fieldLabel, { marginTop: spacing.stackLg }]}>{t('language.appLanguage')}</Text>
         <View style={styles.langRow}>
-          {['English', 'தமிழ்', 'हिन्दी'].map((lang) => (
+          {SUPPORTED_LANGUAGES.map((lang) => (
             <TouchableOpacity
-              key={lang}
-              style={[styles.langChip, prefs.language === lang && styles.langChipActive]}
+              key={lang.code}
+              style={[styles.langChip, activeLanguage === lang.code && styles.langChipActive]}
               activeOpacity={0.85}
-              onPress={() => setPref('language', lang)}
+              onPress={() => selectLanguage(lang.code)}
             >
-              <Text style={[styles.langChipText, prefs.language === lang && styles.langChipTextActive]}>{lang}</Text>
+              <Text style={[styles.langChipText, activeLanguage === lang.code && styles.langChipTextActive]}>{lang.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
         <View style={{ marginTop: spacing.stackMd }}>
-          <ToggleRow label="Send trip receipts on WhatsApp" sublabel="After every ride & delivery" value={prefs.receipts} onValueChange={(v) => setPref('receipts', v)} />
-          <ToggleRow label="Share live location during rides" sublabel="Only with your emergency contacts" value={prefs.shareLive} onValueChange={(v) => setPref('shareLive', v)} />
+          <ToggleRow label={t('profile.receiptsWhatsapp')} sublabel={t('profile.receiptsSublabel')} value={prefs.receipts} onValueChange={(v) => setPref('receipts', v)} />
+          <ToggleRow label={t('profile.shareLiveLocation')} sublabel={t('profile.shareLiveSublabel')} value={prefs.shareLive} onValueChange={(v) => setPref('shareLive', v)} />
         </View>
       </Sheet>
 
@@ -688,10 +696,10 @@ export default function ProfileScreen() {
             <View style={styles.alertIconWrap}>
               <MaterialIcon name="logout" size={24} color={colors.accentRed} />
             </View>
-            <Text style={styles.alertTitle}>Log out of Ematix?</Text>
-            <Text style={styles.alertBody}>You can sign back in anytime. Your rides, deliveries and saved places stay on this device.</Text>
+            <Text style={styles.alertTitle}>{t('profile.logoutTitle')}</Text>
+            <Text style={styles.alertBody}>{t('profile.logoutBody')}</Text>
             <TouchableOpacity style={styles.alertCancel} activeOpacity={0.85} onPress={() => setLogoutOpen(false)}>
-              <Text style={styles.alertCancelText}>Cancel</Text>
+              <Text style={styles.alertCancelText}>{t('common.cancel')}</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={styles.alertDanger}
@@ -701,7 +709,7 @@ export default function ProfileScreen() {
                 router.replace('/login');
               }}
             >
-              <Text style={styles.alertDangerText}>Log Out</Text>
+              <Text style={styles.alertDangerText}>{t('common.logOut')}</Text>
             </TouchableOpacity>
           </View>
         </View>

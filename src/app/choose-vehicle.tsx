@@ -9,12 +9,14 @@ import {
   ScrollView,
 } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type, spacing, radius } from '../theme/typography';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
 
 export default function ChooseVehicleScreen() {
+  const { t } = useTranslation();
   const { colors } = useTheme();
   const styles = createStyles(colors);
   const router = useRouter();
@@ -38,11 +40,11 @@ export default function ChooseVehicleScreen() {
       >
         <View style={styles.container}>
           <Text style={styles.title}>
-            What are you looking for?
+            {t('booking.whatAreYouLookingFor')}
           </Text>
 
           <Text style={styles.subtitle}>
-            Select a vehicle type to start your journey.
+            {t('booking.selectVehicleTypeHint')}
           </Text>
 
           <View style={styles.cardsContainer}>
@@ -52,13 +54,13 @@ export default function ChooseVehicleScreen() {
               activeOpacity={0.9}
               onPress={() => handleSelect('auto')}
               accessibilityRole="button"
-              accessibilityLabel="Ematix Auto"
+              accessibilityLabel={t('vehicle.ematixAuto')}
             >
               <View style={styles.cardContent}>
                 <View>
-                  <Text style={styles.cardTitle}>Ematix Auto</Text>
+                  <Text style={styles.cardTitle}>{t('vehicle.ematixAuto')}</Text>
                   <Text style={styles.cardDesc}>
-                    Quick, affordable rides
+                    {t('booking.quickAffordableRides')}
                   </Text>
                 </View>
 
@@ -82,13 +84,13 @@ export default function ChooseVehicleScreen() {
               activeOpacity={0.9}
               onPress={() => handleSelect('car')}
               accessibilityRole="button"
-              accessibilityLabel="Economic Car"
+              accessibilityLabel={t('vehicle.economicCar')}
             >
               <View style={styles.cardContent}>
                 <View>
-                  <Text style={styles.cardTitle}>Economic Car</Text>
+                  <Text style={styles.cardTitle}>{t('vehicle.economicCar')}</Text>
                   <Text style={styles.cardDesc}>
-                    Comfortable, premium rides
+                    {t('booking.comfortablePremiumRides')}
                   </Text>
                 </View>
 
@@ -112,13 +114,13 @@ export default function ChooseVehicleScreen() {
               activeOpacity={0.9}
               onPress={() => handleSelect('premium_car')}
               accessibilityRole="button"
-              accessibilityLabel="Premium Taxi"
+              accessibilityLabel={t('vehicle.premiumTaxi')}
             >
               <View style={styles.cardContent}>
                 <View>
-                  <Text style={styles.cardTitle}>Premium Taxi</Text>
+                  <Text style={styles.cardTitle}>{t('vehicle.premiumTaxi')}</Text>
                   <Text style={styles.cardDesc}>
-                    Luxury rides
+                    {t('booking.luxuryRides')}
                   </Text>
                 </View>
 

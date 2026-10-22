@@ -22,6 +22,8 @@ import PlanCard, { Plan } from '../../components/PlanCard';
 import { TRAVEL_PROMPTS, SAMPLE_ITINERARIES } from '../../data/mockData';
 import { useAuth } from '../../context/AuthContext';
 import { authedFetch } from '../../utils/api';
+import { useTranslation } from 'react-i18next';
+import { getAppLanguage } from '../../i18n';
 
 type Message = {
   id: string;
@@ -30,17 +32,6 @@ type Message = {
   blocks?: Block[];
   plan?: Plan;
 };
-
-const greetingFor = (name?: string | null) => {
-  const firstName = name?.trim().split(/\s+/)[0] || 'there';
-  return `Hi ${firstName}! I'm your travel & mobility concierge. Tell me how you want to spend your day \u2014 or tap a suggestion below and I'll build a plan you can book instantly.`;
-};
-
-const FALLBACK_REPLY =
-  "I can plan your day or weekend trip and arrange autos, cabs or parcel deliveries for each leg. Try one of the suggestions: plan a day trip in Chennai, or say \"weekend\" for a 2-day Pondicherry plan.";
-
-const OFFLINE_REPLY =
-  "I'm having trouble reaching my assistant right now. Please check your connection and try again in a moment.";
 
 let msgId = 0;
 const nextId = () => `m${++msgId}`;
@@ -68,11 +59,20 @@ function planIdForText(text: string): string | undefined {
 function PromptChips({ onPress }: { onPress: (p: any) => void }) {
   const { colors } = useTheme();
   const styles = createStyles(colors);
+  const { t } = useTranslation();
+
+  const prompts = [
+    { id: 'day-trip', label: t('ai.promptDayTrip'), icon: 'wb-sunny', planId: 'chennaiDay' },
+    { id: 'weekend', label: t('ai.promptWeekend'), icon: 'beach-access', planId: 'pondicherryWeekend' },
+    { id: 'compare', label: t('ai.promptCompare'), icon: 'compare-arrows' },
+    { id: 'nearby', label: t('ai.promptNearby'), icon: 'near-me' },
+  ];
+
   return (
     <View style={styles.promptWrap}>
-      <Text style={styles.promptLabel}>Suggestions</Text>
+      <Text style={styles.promptLabel}>{t('ai.suggestions')}</Text>
       <View style={styles.promptChips}>
-        {TRAVEL_PROMPTS.map((p) => (
+        {prompts.map((p) => (
           <TouchableOpacity key={p.id} style={styles.promptChip} activeOpacity={0.8} onPress={() => onPress(p)}>
             <MaterialIcon name={p.icon as MaterialIconName} size={16} color={colors.primary} />
             <Text style={styles.promptChipText}>{p.label}</Text>
@@ -103,9 +103,14 @@ export default function AskEmatixScreen() {
   const insets = useSafeAreaInsets();
   const styles = createStyles(colors);
   const { user, token } = useAuth();
+  const { t } = useTranslation();
+
+  const greetingText = t('ai.greeting', {
+    name: user?.name?.trim().split(/\s+/)[0] || 'there',
+  });
 
   const [messages, setMessages] = useState<Message[]>([
-    { id: 'greet', role: 'assistant', text: greetingFor(null) },
+    { id: 'greet', role: 'assistant', text: greetingText },
   ]);
   const [isTyping, setIsTyping] = useState(false);
   const [inputText, setInputText] = useState('');
@@ -152,11 +157,15 @@ export default function AskEmatixScreen() {
       .map((m) => ({ role: m.role, text: m.text }));
 
     try {
+      const currentLanguage = getAppLanguage();
       const data = await authedFetch('/api/assistant/chat', token, {
         method: 'POST',
-        body: { messages: history },
+        body: {
+          messages: history,
+          language: currentLanguage,
+        },
       });
-      const reply = String(data?.reply || '').trim() || FALLBACK_REPLY;
+      const reply = String(data?.reply || '').trim() || t('ai.fallbackReply');
       const blocks = Array.isArray(data?.blocks) ? (data.blocks as Block[]) : undefined;
       const plan = (data?.plan as Plan | null) || undefined;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
@@ -165,7 +174,7 @@ export default function AskEmatixScreen() {
       console.warn('[AskEmatix] assistant request failed', error);
       const offlinePlan = (planId ? PLAN_BY_ID(planId) : undefined) as Plan | undefined;
       LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
-      setMessages((m) => [...m, { id: nextId(), role: 'assistant', text: OFFLINE_REPLY, plan: offlinePlan }]);
+      setMessages((m) => [...m, { id: nextId(), role: 'assistant', text: t('ai.offlineReply'), plan: offlinePlan }]);
     } finally {
       setIsTyping(false);
     }
@@ -204,11 +213,11 @@ export default function AskEmatixScreen() {
               <MaterialIcon name="auto-awesome" size={22} color={colors.primary} />
             </View>
             <View style={styles.heroTextWrap}>
-              <Text style={styles.heroTitle}>Travel & Mobility Concierge</Text>
-              <Text style={styles.heroSubtitle}>Plans your day or weekend, then books rides & deliveries for each stop.</Text>
+              <Text style={styles.heroTitle}>{t('ai.conciergeTitle')}</Text>
+              <Text style={styles.heroSubtitle}>{t('ai.conciergeSubtitle')}</Text>
             </View>
             <View style={styles.heroBadge}>
-              <Text style={styles.heroBadgeText}>AI Agent</Text>
+              <Text style={styles.heroBadgeText}>{t('ai.agentBadge')}</Text>
             </View>
           </View>
 
@@ -228,7 +237,7 @@ export default function AskEmatixScreen() {
                 {msg.id === 'greet' || msg.text || msg.blocks?.length ? (
                   <RichMessage
                     blocks={msg.id === 'greet' ? undefined : msg.blocks}
-                    text={msg.id === 'greet' ? greetingFor(user?.name) : msg.text}
+                    text={msg.id === 'greet' ? greetingText : msg.text}
                     textColor={msg.role === 'user' ? colors.onPrimary : colors.onSurface}
                   />
                 ) : null}
@@ -253,7 +262,7 @@ export default function AskEmatixScreen() {
           <View style={styles.inputRow}>
             <TextInput
               style={styles.input}
-              placeholder="Ask Ematix to plan something..."
+              placeholder={t('ai.askPlaceholder')}
               placeholderTextColor={colors.textMuted}
               value={inputText}
               onChangeText={setInputText}

@@ -1,8 +1,10 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Modal, FlatList } from 'react-native';
+import React from 'react';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { useRouter } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import { useTheme } from '../theme/ThemeProvider';
 import { fonts, type, spacing } from '../theme/typography';
+import { screenTitleKey } from '../i18n/screenTitles';
 import MaterialIcon from './MaterialIcon';
 
 interface SharedHeaderProps {
@@ -14,11 +16,16 @@ interface SharedHeaderProps {
 export default function SharedHeader({ currentScreen = 'home', title, onBackPress }: SharedHeaderProps) {
   const { colors, isDark, toggleTheme } = useTheme();
   const styles = createStyles(colors, isDark);
+  const { t } = useTranslation();
 
   const router = useRouter();
 
   const isRootTab = ['home', 'orders', 'profile', 'ask-ematix'].includes(currentScreen);
-  const displayTitle = title || currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1).replace('-', ' ');
+  // The title is looked up by screen slug so it can be translated. An explicit
+  // title wins, and an unknown slug falls back to the slug itself.
+  const titleKey = screenTitleKey(currentScreen);
+  const displayTitle =
+    title || (titleKey ? t(titleKey) : currentScreen.charAt(0).toUpperCase() + currentScreen.slice(1).replace('-', ' '));
 
   return (
     <View style={styles.header}>
@@ -62,7 +69,7 @@ export default function SharedHeader({ currentScreen = 'home', title, onBackPres
           onPress={toggleTheme}
           style={styles.themeBtn}
           activeOpacity={0.7}
-          accessibilityLabel={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+          accessibilityLabel={isDark ? t('common.switchToLightMode') : t('common.switchToDarkMode')}
         >
           <MaterialIcon name={isDark ? 'light-mode' : 'dark-mode'} size={20} color={colors.onSurfaceVariant} />
         </TouchableOpacity>
