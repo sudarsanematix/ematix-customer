@@ -49,6 +49,7 @@ interface RealMapProps {
   showUserLocation?: boolean; // NEW PROP
   pulseMarker?: { latitude: number; longitude: number }; // NEW PROP for finding driver
   mapPadding?: MapPadding; // NEW PROP to shift map center
+  selectionPoint?: { xRatio: number; yRatio: number };
   children?: React.ReactNode;
   onRegionChange?: (region: { latitude: number; longitude: number }) => void;
 }
@@ -65,6 +66,7 @@ export default function RealMap({
   showUserLocation = false,
   pulseMarker,
   mapPadding,
+  selectionPoint,
   children,
   onRegionChange,
 }: RealMapProps) {
@@ -98,6 +100,7 @@ export default function RealMap({
       route={route}
       showUserLocation={showUserLocation}
       mapPadding={mapPadding}
+      selectionPoint={selectionPoint}
       onRegionChange={onRegionChange}
     >
       {children}

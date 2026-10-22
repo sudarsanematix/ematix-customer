@@ -1,7 +1,8 @@
 import { SafeAreaView } from 'react-native-safe-area-context';
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, ScrollView, Animated, Alert, Modal, ActivityIndicator, BackHandler } from 'react-native';
 import { useRouter, useLocalSearchParams, useFocusEffect } from 'expo-router';
+import { useTranslation } from 'react-i18next';
 import * as Linking from 'expo-linking';
 import SharedHeader from '../components/SharedHeader';
 import MaterialIcon from '../components/MaterialIcon';
@@ -56,6 +57,7 @@ export default function ActiveRideScreen() {
   const mapTheme = useMemo(() => buildMapTheme(isDark), [isDark]);
   const styles = createStyles(colors, mapTheme);
   const router = useRouter();
+  const { t } = useTranslation();
   const { user } = useAuth();
   const { rideId, vehicle } = useLocalSearchParams<{ rideId: string, vehicle?: string }>();
   const [ride, setRide] = useState<RideData | null>(null);
@@ -63,6 +65,40 @@ export default function ActiveRideScreen() {
   const [hasUnread, setHasUnread] = useState(false);
   const [pulse] = useState(() => new Animated.Value(0));
   const focusedRef = useRef(true);
+
+  const [showCancelModal, setShowCancelModal] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+
+  const isCancellable = useMemo(() => {
+    return ride && ['pending', 'accepted', 'en_route_pickup', 'arrived'].includes(ride.status);
+  }, [ride?.status]);
+
+  const handleBackAction = () => {
+    if (isCancellable) {
+      setShowCancelModal(true);
+    } else {
+      router.replace('/(tabs)/home');
+    }
+  };
+
+  useEffect(() => {
+    const onHardwareBack = () => {
+      handleBackAction();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onHardwareBack);
+    return () => sub.remove();
+  }, [isCancellable]);
+
+  const confirmCancelRide = () => {
+    setCancelling(true);
+    socketService.emit('cancel_ride', { rideId });
+    setTimeout(() => {
+      setShowCancelModal(false);
+      setCancelling(false);
+      router.replace('/(tabs)/home');
+    }, 400);
+  };
 
   const [driver, setDriver] = useState<LiveVehicle | null>(null);
   const [follow, setFollow] = useState(true);
@@ -387,7 +423,7 @@ export default function ActiveRideScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <SharedHeader currentScreen="active-ride" title="Active Ride Tracking" />
+      <SharedHeader currentScreen="active-ride" title="Active Ride Tracking" onBackPress={handleBackAction} />
 
       {/* The map is a fixed sibling, NOT inside the ScrollView: a self-gesturing
           native MapView nested in a ScrollView loses its pan/pinch gestures to
@@ -579,6 +615,18 @@ export default function ActiveRideScreen() {
               </View>
             </View>
 
+            {/* Cancel Ride Action Button */}
+            {isCancellable && (
+              <TouchableOpacity
+                style={styles.cancelRideBtn}
+                activeOpacity={0.85}
+                onPress={() => setShowCancelModal(true)}
+              >
+                <MaterialIcon name="cancel" size={20} color={colors.accentRed} />
+                <Text style={styles.cancelRideBtnText}>{t('booking.cancelRide')}</Text>
+              </TouchableOpacity>
+            )}
+
             {/* Safety Badge Footer */}
             <View style={styles.safetyFooter}>
               <MaterialIcon name="lock" size={14} color={colors.outline} />
@@ -587,6 +635,45 @@ export default function ActiveRideScreen() {
           </ScrollView>
         </View>
       </View>
+
+      {/* Cancel Confirmation Modal */}
+      <Modal visible={showCancelModal} transparent animationType="fade" onRequestClose={() => setShowCancelModal(false)}>
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <View style={styles.alertIconWrapper}>
+              <MaterialIcon name="warning" size={28} color={colors.accentRed} />
+            </View>
+            <Text style={styles.modalTitle}>{t('ride.cancelRideConfirmTitle')}</Text>
+            <Text style={styles.modalSubtitle}>
+              {ride?.type === 'parcel'
+                ? t('ride.cancelDeliveryConfirmBody')
+                : t('ride.cancelRideConfirmBody')}
+            </Text>
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                style={styles.keepBtn}
+                activeOpacity={0.85}
+                disabled={cancelling}
+                onPress={() => setShowCancelModal(false)}
+              >
+                <Text style={styles.keepBtnText}>{t('ride.keepRide')}</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.confirmCancelBtn}
+                activeOpacity={0.85}
+                disabled={cancelling}
+                onPress={confirmCancelRide}
+              >
+                {cancelling ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.confirmCancelBtnText}>{t('ride.yesCancelRide')}</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -1184,5 +1271,98 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     fontSize: 15,
     lineHeight: 20,
     color: colors.onPrimary,
+  },
+  cancelRideBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    backgroundColor: colors.errorContainer,
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    marginTop: 4,
+  },
+  cancelRideBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 14,
+    color: colors.accentRed,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 340,
+    backgroundColor: colors.surfaceContainerLowest,
+    borderRadius: 24,
+    padding: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 20,
+  },
+  alertIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: colors.errorContainer,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontFamily: fonts.bold,
+    fontSize: 18,
+    lineHeight: 24,
+    color: colors.onSurface,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalSubtitle: {
+    fontFamily: fonts.regular,
+    fontSize: 13,
+    lineHeight: 18,
+    color: colors.textMuted,
+    textAlign: 'center',
+    marginBottom: 24,
+  },
+  modalActions: {
+    width: '100%',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  keepBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: colors.surfaceContainerHigh,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  keepBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    color: colors.onSurface,
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 12,
+    backgroundColor: colors.accentRed,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  confirmCancelBtnText: {
+    fontFamily: fonts.semibold,
+    fontSize: 13,
+    color: '#ffffff',
   },
 });

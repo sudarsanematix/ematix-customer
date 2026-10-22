@@ -260,6 +260,14 @@ export default function DestinationSearchScreen() {
         interactive
         style={StyleSheet.absoluteFill}
         region={mapRegion}
+        selectionPoint={
+          isMapPicking
+            ? {
+              xRatio: 0.5,
+              yRatio: bookingFor === 'someone' ? 0.25 : 0.35,
+            }
+            : undefined
+        }
         markers={[
           ...(pickupCoords && (!isMapPicking || focusedField !== 'pickup') ? [{ id: 'pickup', latitude: pickupCoords.latitude, longitude: pickupCoords.longitude, color: mapTheme.routeDone, title: 'Pickup' }] : []),
           ...(destinationCoords && (!isMapPicking || focusedField !== 'destination') ? [{ id: 'dropoff', latitude: destinationCoords.latitude, longitude: destinationCoords.longitude, color: mapTheme.success, title: 'Drop-off' }] : [])
@@ -508,7 +516,15 @@ export default function DestinationSearchScreen() {
                 style={{ backgroundColor: colors.primary, paddingVertical: 16, borderRadius: 16, alignItems: 'center' }}
                 activeOpacity={0.8}
                 onPress={async () => {
-                  if (mapCenterCoords) {
+                  if (
+                    mapCenterCoords &&
+                    Number.isFinite(mapCenterCoords.latitude) &&
+                    Number.isFinite(mapCenterCoords.longitude) &&
+                    mapCenterCoords.latitude >= -90 &&
+                    mapCenterCoords.latitude <= 90 &&
+                    mapCenterCoords.longitude >= -180 &&
+                    mapCenterCoords.longitude <= 180
+                  ) {
                     try {
                       // Reverse geocode to get a nice street name
                       const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${mapCenterCoords.longitude},${mapCenterCoords.latitude}.json?access_token=${MAPBOX_TOKEN}`;

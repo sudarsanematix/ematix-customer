@@ -17,7 +17,7 @@ class SocketService {
 
   setToken(token: string | null) {
     if (this.authToken === token) return;
-    
+
     const previousToken = this.authToken;
     this.authToken = token;
 
@@ -99,7 +99,7 @@ class SocketService {
     if (!rideId) return;
     this.lastJoin = { rideId, role, userId };
     console.log(`[Customer App] Joining room for ride: ${rideId}`);
-    
+
     // Only emit explicitly if connected; otherwise connect() callback handles lastJoin
     if (this.socket && this.socket.connected) {
       this.socket.emit('join_ride', this.lastJoin);

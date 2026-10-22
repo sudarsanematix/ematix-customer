@@ -30,28 +30,28 @@ const SIZE_TIERS: {
   descKey: TranslationKey;
   icon: MaterialIconName;
 }[] = [
-  {
-    id: 'small',
-    titleKey: 'package.sizeSmall',
-    badgeKey: 'package.weightSmall',
-    descKey: 'package.sizeDescSmall',
-    icon: 'backpack' as MaterialIconName,
-  },
-  {
-    id: 'medium',
-    titleKey: 'package.sizeMedium',
-    badgeKey: 'package.weightMedium',
-    descKey: 'package.sizeDescMedium',
-    icon: 'two-wheeler' as MaterialIconName,
-  },
-  {
-    id: 'large',
-    titleKey: 'package.sizeLarge',
-    badgeKey: 'package.weightLarge',
-    descKey: 'package.sizeDescLarge',
-    icon: 'local-shipping' as MaterialIconName,
-  },
-];
+    {
+      id: 'small',
+      titleKey: 'package.sizeSmall',
+      badgeKey: 'package.weightSmall',
+      descKey: 'package.sizeDescSmall',
+      icon: 'backpack' as MaterialIconName,
+    },
+    {
+      id: 'medium',
+      titleKey: 'package.sizeMedium',
+      badgeKey: 'package.weightMedium',
+      descKey: 'package.sizeDescMedium',
+      icon: 'two-wheeler' as MaterialIconName,
+    },
+    {
+      id: 'large',
+      titleKey: 'package.sizeLarge',
+      badgeKey: 'package.weightLarge',
+      descKey: 'package.sizeDescLarge',
+      icon: 'local-shipping' as MaterialIconName,
+    },
+  ];
 
 const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.34:4000';
 
@@ -114,260 +114,260 @@ export default function PackageDeliveryScreen() {
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
         >
-        {/* Steps Progress Header */}
-        <View style={styles.progressHeader}>
-          <View style={styles.progressHeaderRow}>
-            <Text style={styles.stepLabel}>{t('package.step2of4')}</Text>
-            <Text style={styles.stepTitle}>{t('package.specs')}</Text>
-          </View>
-          <View style={styles.progressBar}>
-            <View style={styles.progressFill} />
-          </View>
-        </View>
-
-        {/* Route Summary Card */}
-        <View style={styles.routeCard}>
-          <View style={styles.routeHeader}>
-            <View style={styles.routePill}>
-              <MaterialIcon name="near-me" size={15} color={colors.primary} />
-              <Text style={styles.routePillText}>
-                {t('package.routePill', { distance: `${distanceKm.toFixed(1)} km`, time: '24 mins' })}
-              </Text>
+          {/* Steps Progress Header */}
+          <View style={styles.progressHeader}>
+            <View style={styles.progressHeaderRow}>
+              <Text style={styles.stepLabel}>{t('package.step2of4')}</Text>
+              <Text style={styles.stepTitle}>{t('package.specs')}</Text>
             </View>
-            <TouchableOpacity style={styles.editRouteBtn} activeOpacity={0.7}>
-              <Text style={styles.editRouteText}>{t('package.editRoute')}</Text>
-              <MaterialIcon name="chevron-right" size={16} color={colors.primary} />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.routeNodes}>
-            <View style={styles.connectorLine} />
-            <View style={styles.routeNode}>
-              <View style={[styles.nodeBadge, styles.nodeBadgeBlue]}>
-                <View style={styles.nodeDotBlue} />
-              </View>
-              <View style={styles.nodeText}>
-                <Text style={styles.nodeLabelMuted}>{t('package.pickupLabel')}</Text>
-                <TextInput
-                  style={styles.nodeInput}
-                  value={pickup}
-                  onChangeText={setPickup}
-                  placeholder={t('package.pickupPlaceholder')}
-                  placeholderTextColor={colors.textMuted}
-                />
-              </View>
-            </View>
-            <View style={styles.routeNode}>
-              <View style={[styles.nodeBadge, styles.nodeBadgeRed]}>
-                <View style={styles.nodeDotRed} />
-              </View>
-              <View style={styles.nodeText}>
-                <Text style={styles.nodeLabelRed}>{t('package.dropoffLabel')}</Text>
-                <TextInput
-                  style={styles.nodeInput}
-                  value={dropoff}
-                  onChangeText={setDropoff}
-                  placeholder={t('package.dropoffPlaceholder')}
-                  placeholderTextColor={colors.textMuted}
-                />
-              </View>
+            <View style={styles.progressBar}>
+              <View style={styles.progressFill} />
             </View>
           </View>
-        </View>
 
-        {/* Category Carousel */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{t('package.whatSending')}</Text>
-          <Text style={styles.sectionTagMuted}>{t('common.required')}</Text>
-        </View>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.categoryCarousel}
-        >
-          {CATEGORIES.map((cat) => {
-            const isSelected = selectedCategory === cat.id;
-            return (
-              <TouchableOpacity
-                key={cat.id}
-                onPress={() => setSelectedCategory(cat.id)}
-                style={[styles.categoryChip, isSelected ? styles.categoryChipActive : styles.categoryChipInactive]}
-                activeOpacity={0.9}
-              >
-                <MaterialIcon
-                  name={cat.icon}
-                  size={20}
-                  color={isSelected ? colors.primary : colors.textMuted}
-                />
-                <Text style={[styles.categoryChipText, isSelected && styles.categoryChipTextActive]}>
-                  {t(cat.labelKey)}
+          {/* Route Summary Card */}
+          <View style={styles.routeCard}>
+            <View style={styles.routeHeader}>
+              <View style={styles.routePill}>
+                <MaterialIcon name="near-me" size={15} color={colors.primary} />
+                <Text style={styles.routePillText}>
+                  {t('package.routePill', { distance: `${distanceKm.toFixed(1)} km`, time: '24 mins' })}
                 </Text>
+              </View>
+              <TouchableOpacity style={styles.editRouteBtn} activeOpacity={0.7}>
+                <Text style={styles.editRouteText}>{t('package.editRoute')}</Text>
+                <MaterialIcon name="chevron-right" size={16} color={colors.primary} />
               </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-
-        {/* Size & Weight Classification */}
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>{t('package.sizeWeight')}</Text>
-          <Text style={styles.sectionTagPrimary}>{t('package.recommended')}</Text>
-        </View>
-        <View style={styles.sizeGroups}>
-          {SIZE_TIERS.map((tier) => {
-            const isSelected = weightTier === tier.id;
-            return (
-              <TouchableOpacity
-                key={tier.id}
-                onPress={() => setWeightTier(tier.id)}
-                style={[styles.sizeCard, isSelected ? styles.sizeCardActive : styles.sizeCardInactive]}
-                activeOpacity={0.9}
-              >
-                <View style={styles.sizeIconWrapper}>
-                  <MaterialIcon
-                    name={tier.icon}
-                    size={24}
-                    color={isSelected ? colors.primary : colors.onSurfaceVariant}
-                  />
-                </View>
-                <View style={styles.sizeTextCol}>
-                  <View style={styles.sizeTitleRow}>
-                    <Text style={styles.sizeTitle}>{t(tier.titleKey)}</Text>
-                    <View style={[styles.sizeBadge, isSelected ? styles.sizeBadgeActive : styles.sizeBadgeInactive]}>
-                      <Text style={[styles.sizeBadgeText, isSelected ? styles.sizeBadgeTextActive : styles.sizeBadgeTextInactive]}>
-                        {t(tier.badgeKey)}
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={[styles.sizeDesc, isSelected ? styles.sizeDescActive : styles.sizeDescInactive]} numberOfLines={1}>
-                    {t(tier.descKey)}
-                  </Text>
-                </View>
-                <View style={[styles.sizeCheck, isSelected ? styles.sizeCheckActive : styles.sizeCheckInactive]}>
-                  <MaterialIcon
-                    name="check"
-                    size={16}
-                    color={isSelected ? colors.onPrimary : 'transparent'}
-                  />
-                </View>
-              </TouchableOpacity>
-            );
-          })}
-        </View>
-
-        {/* Fragile Care */}
-        <TouchableOpacity
-          style={styles.fragileCard}
-          activeOpacity={1}
-          onPress={() => setIsFragile(!isFragile)}
-        >
-          <View style={styles.fragileLeft}>
-            <View style={styles.fragileIconWrapper}>
-              <MaterialIcon name="gavel" size={22} color={colors.accentRed} />
             </View>
-            <View style={styles.fragileTextCol}>
-              <View style={styles.fragileTitleRow}>
-                <Text style={styles.fragileTitle}>{t('package.fragileTitle')}</Text>
-                <View style={styles.fragileBadge}>
-                  <Text style={styles.fragileBadgeText}>{t('package.fragileBadge')}</Text>
+
+            <View style={styles.routeNodes}>
+              <View style={styles.connectorLine} />
+              <View style={styles.routeNode}>
+                <View style={[styles.nodeBadge, styles.nodeBadgeBlue]}>
+                  <View style={styles.nodeDotBlue} />
+                </View>
+                <View style={styles.nodeText}>
+                  <Text style={styles.nodeLabelMuted}>{t('package.pickupLabel')}</Text>
+                  <TextInput
+                    style={styles.nodeInput}
+                    value={pickup}
+                    onChangeText={setPickup}
+                    placeholder={t('package.pickupPlaceholder')}
+                    placeholderTextColor={colors.textMuted}
+                  />
                 </View>
               </View>
-              <Text style={styles.fragileDesc}>{t('package.fragileDesc')}</Text>
-            </View>
-          </View>
-          <View style={[styles.toggleOuter, isFragile ? styles.toggleOuterOn : styles.toggleOuterOff]}>
-            <View style={[styles.toggleKnob, isFragile ? styles.toggleKnobOn : styles.toggleKnobOff]}>
-              {isFragile && <MaterialIcon name="priority-high" size={14} color={colors.accentRed} />}
-            </View>
-          </View>
-        </TouchableOpacity>
-
-        {/* Declared Value */}
-        <View style={styles.valueCard}>
-          <View style={styles.valueHeader}>
-            <View style={styles.valueTitleRow}>
-              <Text style={styles.valueTitle}>{t('package.declaredValue')}</Text>
-              <MaterialIcon name="help" size={18} color={colors.textMuted} />
-            </View>
-            <Text style={styles.valueCoverText}>{t('package.freeCover')}</Text>
-          </View>
-          <View style={styles.valueInputBox}>
-            <Text style={styles.valueRupee}>₹</Text>
-            <TextInput
-              style={styles.valueInput}
-              value={declaredValue}
-              onChangeText={setDeclaredValue}
-              keyboardType="numeric"
-              placeholder={t('package.enterValue')}
-              placeholderTextColor={colors.textMuted}
-            />
-            <View style={styles.insuredPill}>
-              <MaterialIcon name="verified" size={14} color={colors.primary} />
-              <Text style={styles.insuredPillText}>{t('package.insured')}</Text>
-            </View>
-          </View>
-          <View style={styles.valueFooter}>
-            <MaterialIcon name="shield" size={14} color={colors.primary} />
-            <Text style={styles.valueFooterText}>{t('package.transitShield')}</Text>
-          </View>
-        </View>
-
-        {/* Recipient Details */}
-        <View style={styles.recipientCard}>
-          <View style={styles.recipientHeader}>
-            <Text style={styles.recipientTitle}>{t('package.recipientInfo')}</Text>
-            <TouchableOpacity style={styles.chooseContactBtn} activeOpacity={0.8}>
-              <MaterialIcon name="contacts" size={16} color={colors.primary} />
-              <Text style={styles.chooseContactText}>{t('package.chooseContact')}</Text>
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{t('package.receiverName')}</Text>
-            <View style={styles.fieldBox}>
-              <MaterialIcon name="person" size={20} color={colors.textMuted} />
-              <TextInput
-                style={styles.fieldInput}
-                placeholder={t('package.receiverNamePlaceholder')}
-                placeholderTextColor={colors.textMuted}
-                value={recipientName}
-                onChangeText={setRecipientName}
-              />
+              <View style={styles.routeNode}>
+                <View style={[styles.nodeBadge, styles.nodeBadgeRed]}>
+                  <View style={styles.nodeDotRed} />
+                </View>
+                <View style={styles.nodeText}>
+                  <Text style={styles.nodeLabelRed}>{t('package.dropoffLabel')}</Text>
+                  <TextInput
+                    style={styles.nodeInput}
+                    value={dropoff}
+                    onChangeText={setDropoff}
+                    placeholder={t('package.dropoffPlaceholder')}
+                    placeholderTextColor={colors.textMuted}
+                  />
+                </View>
+              </View>
             </View>
           </View>
 
-          <View style={styles.fieldGroup}>
-            <Text style={styles.fieldLabel}>{t('package.contactNumber')}</Text>
-            <View style={styles.fieldBox}>
-              <MaterialIcon name="call" size={20} color={colors.textMuted} />
-              <TextInput
-                style={styles.fieldInput}
-                placeholder={t('package.contactNumberPlaceholder')}
-                placeholderTextColor={colors.textMuted}
-                value={recipientPhone}
-                onChangeText={setRecipientPhone}
-                keyboardType="phone-pad"
-              />
-            </View>
+          {/* Category Carousel */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t('package.whatSending')}</Text>
+            <Text style={styles.sectionTagMuted}>{t('common.required')}</Text>
+          </View>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.categoryCarousel}
+          >
+            {CATEGORIES.map((cat) => {
+              const isSelected = selectedCategory === cat.id;
+              return (
+                <TouchableOpacity
+                  key={cat.id}
+                  onPress={() => setSelectedCategory(cat.id)}
+                  style={[styles.categoryChip, isSelected ? styles.categoryChipActive : styles.categoryChipInactive]}
+                  activeOpacity={0.9}
+                >
+                  <MaterialIcon
+                    name={cat.icon}
+                    size={20}
+                    color={isSelected ? colors.primary : colors.textMuted}
+                  />
+                  <Text style={[styles.categoryChipText, isSelected && styles.categoryChipTextActive]}>
+                    {t(cat.labelKey)}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+
+          {/* Size & Weight Classification */}
+          <View style={styles.sectionHeader}>
+            <Text style={styles.sectionTitle}>{t('package.sizeWeight')}</Text>
+            <Text style={styles.sectionTagPrimary}>{t('package.recommended')}</Text>
+          </View>
+          <View style={styles.sizeGroups}>
+            {SIZE_TIERS.map((tier) => {
+              const isSelected = weightTier === tier.id;
+              return (
+                <TouchableOpacity
+                  key={tier.id}
+                  onPress={() => setWeightTier(tier.id)}
+                  style={[styles.sizeCard, isSelected ? styles.sizeCardActive : styles.sizeCardInactive]}
+                  activeOpacity={0.9}
+                >
+                  <View style={styles.sizeIconWrapper}>
+                    <MaterialIcon
+                      name={tier.icon}
+                      size={24}
+                      color={isSelected ? colors.primary : colors.onSurfaceVariant}
+                    />
+                  </View>
+                  <View style={styles.sizeTextCol}>
+                    <View style={styles.sizeTitleRow}>
+                      <Text style={styles.sizeTitle}>{t(tier.titleKey)}</Text>
+                      <View style={[styles.sizeBadge, isSelected ? styles.sizeBadgeActive : styles.sizeBadgeInactive]}>
+                        <Text style={[styles.sizeBadgeText, isSelected ? styles.sizeBadgeTextActive : styles.sizeBadgeTextInactive]}>
+                          {t(tier.badgeKey)}
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.sizeDesc, isSelected ? styles.sizeDescActive : styles.sizeDescInactive]} numberOfLines={1}>
+                      {t(tier.descKey)}
+                    </Text>
+                  </View>
+                  <View style={[styles.sizeCheck, isSelected ? styles.sizeCheckActive : styles.sizeCheckInactive]}>
+                    <MaterialIcon
+                      name="check"
+                      size={16}
+                      color={isSelected ? colors.onPrimary : 'transparent'}
+                    />
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
           </View>
 
-          <TouchableOpacity style={styles.smsRow} activeOpacity={0.9} onPress={() => setSmsTracking(!smsTracking)}>
-            <View style={[styles.smsCheck, smsTracking && styles.smsCheckActive]}>
-              {smsTracking && <MaterialIcon name="check" size={16} color={colors.onPrimary} />}
+          {/* Fragile Care */}
+          <TouchableOpacity
+            style={styles.fragileCard}
+            activeOpacity={1}
+            onPress={() => setIsFragile(!isFragile)}
+          >
+            <View style={styles.fragileLeft}>
+              <View style={styles.fragileIconWrapper}>
+                <MaterialIcon name="gavel" size={22} color={colors.accentRed} />
+              </View>
+              <View style={styles.fragileTextCol}>
+                <View style={styles.fragileTitleRow}>
+                  <Text style={styles.fragileTitle}>{t('package.fragileTitle')}</Text>
+                  <View style={styles.fragileBadge}>
+                    <Text style={styles.fragileBadgeText}>{t('package.fragileBadge')}</Text>
+                  </View>
+                </View>
+                <Text style={styles.fragileDesc}>{t('package.fragileDesc')}</Text>
+              </View>
             </View>
-            <View style={styles.smsTextCol}>
-              <Text style={styles.smsTitle}>{t('package.smsTitle')}</Text>
-              <Text style={styles.smsDesc}>{t('package.smsDesc')}</Text>
+            <View style={[styles.toggleOuter, isFragile ? styles.toggleOuterOn : styles.toggleOuterOff]}>
+              <View style={[styles.toggleKnob, isFragile ? styles.toggleKnobOn : styles.toggleKnobOff]}>
+                {isFragile && <MaterialIcon name="priority-high" size={14} color={colors.accentRed} />}
+              </View>
             </View>
           </TouchableOpacity>
-        </View>
 
-        {/* Instruction Note */}
-        <View style={styles.notePill}>
-          <MaterialIcon name="info" size={20} color={colors.primary} />
-          <Text style={styles.noteText}>
-            {t('package.prohibitedNote')}
-          </Text>
-        </View>
+          {/* Declared Value */}
+          <View style={styles.valueCard}>
+            <View style={styles.valueHeader}>
+              <View style={styles.valueTitleRow}>
+                <Text style={styles.valueTitle}>{t('package.declaredValue')}</Text>
+                <MaterialIcon name="help" size={18} color={colors.textMuted} />
+              </View>
+              <Text style={styles.valueCoverText}>{t('package.freeCover')}</Text>
+            </View>
+            <View style={styles.valueInputBox}>
+              <Text style={styles.valueRupee}>₹</Text>
+              <TextInput
+                style={styles.valueInput}
+                value={declaredValue}
+                onChangeText={setDeclaredValue}
+                keyboardType="numeric"
+                placeholder={t('package.enterValue')}
+                placeholderTextColor={colors.textMuted}
+              />
+              <View style={styles.insuredPill}>
+                <MaterialIcon name="verified" size={14} color={colors.primary} />
+                <Text style={styles.insuredPillText}>{t('package.insured')}</Text>
+              </View>
+            </View>
+            <View style={styles.valueFooter}>
+              <MaterialIcon name="shield" size={14} color={colors.primary} />
+              <Text style={styles.valueFooterText}>{t('package.transitShield')}</Text>
+            </View>
+          </View>
+
+          {/* Recipient Details */}
+          <View style={styles.recipientCard}>
+            <View style={styles.recipientHeader}>
+              <Text style={styles.recipientTitle}>{t('package.recipientInfo')}</Text>
+              <TouchableOpacity style={styles.chooseContactBtn} activeOpacity={0.8}>
+                <MaterialIcon name="contacts" size={16} color={colors.primary} />
+                <Text style={styles.chooseContactText}>{t('package.chooseContact')}</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>{t('package.receiverName')}</Text>
+              <View style={styles.fieldBox}>
+                <MaterialIcon name="person" size={20} color={colors.textMuted} />
+                <TextInput
+                  style={styles.fieldInput}
+                  placeholder={t('package.receiverNamePlaceholder')}
+                  placeholderTextColor={colors.textMuted}
+                  value={recipientName}
+                  onChangeText={setRecipientName}
+                />
+              </View>
+            </View>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>{t('package.contactNumber')}</Text>
+              <View style={styles.fieldBox}>
+                <MaterialIcon name="call" size={20} color={colors.textMuted} />
+                <TextInput
+                  style={styles.fieldInput}
+                  placeholder={t('package.contactNumberPlaceholder')}
+                  placeholderTextColor={colors.textMuted}
+                  value={recipientPhone}
+                  onChangeText={setRecipientPhone}
+                  keyboardType="phone-pad"
+                />
+              </View>
+            </View>
+
+            <TouchableOpacity style={styles.smsRow} activeOpacity={0.9} onPress={() => setSmsTracking(!smsTracking)}>
+              <View style={[styles.smsCheck, smsTracking && styles.smsCheckActive]}>
+                {smsTracking && <MaterialIcon name="check" size={16} color={colors.onPrimary} />}
+              </View>
+              <View style={styles.smsTextCol}>
+                <Text style={styles.smsTitle}>{t('package.smsTitle')}</Text>
+                <Text style={styles.smsDesc}>{t('package.smsDesc')}</Text>
+              </View>
+            </TouchableOpacity>
+          </View>
+
+          {/* Instruction Note */}
+          <View style={styles.notePill}>
+            <MaterialIcon name="info" size={20} color={colors.primary} />
+            <Text style={styles.noteText}>
+              {t('package.prohibitedNote')}
+            </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
 

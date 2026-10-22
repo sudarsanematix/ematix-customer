@@ -107,6 +107,14 @@ export type NativeMapProps = {
   showUserLocation?: boolean;
   /** RealMap parity. Shifts the camera target. */
   mapPadding?: MapPadding;
+  /**
+   * Normalized screen position of the selection pin tip.
+   * Values range from 0 to 1.
+   */
+  selectionPoint?: {
+    xRatio: number;
+    yRatio: number;
+  };
   onPress?: (lngLat: LngLat) => void;
   onUserMove?: () => void;
   onRegionChange?: (region: NativeMapRegionChange) => void;

@@ -5,6 +5,7 @@ import React, {
   useImperativeHandle,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 import { StyleSheet, View } from 'react-native';
 import {
@@ -81,6 +82,7 @@ const NativeMapView = forwardRef<NativeMapHandle, NativeMapProps>(function Nativ
     edgePadding = DEFAULT_EDGE_PADDING,
     showUserLocation = false,
     mapPadding,
+    selectionPoint,
     onPress,
     onUserMove,
     onRegionChange,
@@ -92,6 +94,8 @@ const NativeMapView = forwardRef<NativeMapHandle, NativeMapProps>(function Nativ
   const { isDark } = useTheme();
   const theme = themeOverride ?? buildMapTheme(isDark);
 
+  const mapViewRef = useRef<any>(null);
+  const [mapSize, setMapSize] = useState({ width: 0, height: 0 });
   const cameraRef = useRef<Camera>(null);
   const followRef = useRef(follow);
   const gestureRef = useRef(false);
@@ -262,13 +266,47 @@ const NativeMapView = forwardRef<NativeMapHandle, NativeMapProps>(function Nativ
   );
 
   const handleIdle = useCallback(
-    (state: MapState) => {
-      const point = state?.properties?.center;
-      if (point && onRegionChange) {
-        onRegionChange({ latitude: point[1], longitude: point[0] });
+    async (state: MapState) => {
+      if (!onRegionChange) return;
+
+      // Prefer the geographic point directly under the fixed pin.
+      if (
+        selectionPoint &&
+        mapSize.width > 0 &&
+        mapSize.height > 0
+      ) {
+        try {
+          const screenX = mapSize.width * selectionPoint.xRatio;
+          const screenY = mapSize.height * selectionPoint.yRatio;
+          const coordinates = await mapViewRef.current?.getCoordinateFromView([
+            screenX,
+            screenY,
+          ]);
+          if (coordinates && isValidLngLat(coordinates)) {
+            onRegionChange({
+              longitude: coordinates[0],
+              latitude: coordinates[1],
+            });
+            return;
+          }
+        } catch (error) {
+          console.warn(
+            'Failed to resolve selection pin coordinates:',
+            error
+          );
+        }
+      }
+
+      // Fallback for maps that don't use a selection pin.
+      const center = state?.properties?.center;
+      if (center && isValidLngLat(center)) {
+        onRegionChange({
+          longitude: center[0],
+          latitude: center[1],
+        });
       }
     },
-    [onRegionChange]
+    [onRegionChange, selectionPoint, mapSize]
   );
 
   useImperativeHandle(
@@ -310,6 +348,19 @@ const NativeMapView = forwardRef<NativeMapHandle, NativeMapProps>(function Nativ
   return (
     <View style={[styles.container, { backgroundColor: theme.base }, style]}>
       <MapView
+        ref={mapViewRef}
+        onLayout={(event) => {
+          const { width, height } = event.nativeEvent.layout;
+          setMapSize((previous) => {
+            if (
+              previous.width === width &&
+              previous.height === height
+            ) {
+              return previous;
+            }
+            return { width, height };
+          });
+        }}
         style={StyleSheet.absoluteFill}
         styleURL={mapStyle ?? theme.styleUrl}
         scrollEnabled={interactive}

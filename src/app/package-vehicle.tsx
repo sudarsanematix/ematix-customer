@@ -211,191 +211,191 @@ export default function PackageVehicleScreen() {
           keyboardDismissMode="on-drag"
           showsVerticalScrollIndicator={false}
         >
-        {/* Map Preview */}
-        <View style={{ height: 180, borderRadius: 16, overflow: 'hidden', marginHorizontal: 20, marginTop: 16 }}>
-          <RealMap
-            interactive={false}
-            style={{ width: '100%', height: '100%' }}
-            markers={[
-              { id: 'pickup', latitude: pickupLat, longitude: pickupLng, color: mapTheme.routeDone, title: 'Pickup' },
-              { id: 'dropoff', latitude: dropoffLat, longitude: dropoffLng, color: mapTheme.success, title: 'Drop-off' }
-            ]}
-            routeCoordinates={routeCoords}
-          />
-        </View>
+          {/* Map Preview */}
+          <View style={{ height: 180, borderRadius: 16, overflow: 'hidden', marginHorizontal: 20, marginTop: 16 }}>
+            <RealMap
+              interactive={false}
+              style={{ width: '100%', height: '100%' }}
+              markers={[
+                { id: 'pickup', latitude: pickupLat, longitude: pickupLng, color: mapTheme.routeDone, title: 'Pickup' },
+                { id: 'dropoff', latitude: dropoffLat, longitude: dropoffLng, color: mapTheme.success, title: 'Drop-off' }
+              ]}
+              routeCoordinates={routeCoords}
+            />
+          </View>
 
-        {/* Route Timeline Card */}
-        <View style={styles.routeCard}>
-          <View style={styles.timelineRow}>
-            <View style={styles.timelineSpine}>
-              <View style={styles.spineDotBlue}>
-                <View style={styles.spineDotBlueInner} />
-              </View>
-              <View style={styles.spineLine} />
-              <View style={styles.spineDotRed}>
-                <View style={styles.spineDotRedInner} />
-              </View>
-            </View>
-            <View style={styles.timelineTextCol}>
-              <View style={styles.stopRow}>
-                <View style={styles.stopHeader}>
-                  <Text style={styles.stopLabelBlue}>{t('package.pickupPoint')}</Text>
-                  <View style={styles.stopSepDot} />
-                  <Text style={styles.stopSender}>{t('package.senderMe')}</Text>
+          {/* Route Timeline Card */}
+          <View style={styles.routeCard}>
+            <View style={styles.timelineRow}>
+              <View style={styles.timelineSpine}>
+                <View style={styles.spineDotBlue}>
+                  <View style={styles.spineDotBlueInner} />
                 </View>
-                <Text style={styles.stopAddress} numberOfLines={1}>{pickupAddr}</Text>
+                <View style={styles.spineLine} />
+                <View style={styles.spineDotRed}>
+                  <View style={styles.spineDotRedInner} />
+                </View>
               </View>
-              <View style={styles.stopRow}>
-                <Text style={styles.stopLabelRed}>{t('package.dropoffPoint')}</Text>
-                <Text style={styles.stopAddress} numberOfLines={1}>{dropoffAddr}</Text>
-                <Text style={styles.stopReceiver} numberOfLines={1}>
-                  {t('package.receiverLabel', { name: recipientName })} • {recipientPhone}
+              <View style={styles.timelineTextCol}>
+                <View style={styles.stopRow}>
+                  <View style={styles.stopHeader}>
+                    <Text style={styles.stopLabelBlue}>{t('package.pickupPoint')}</Text>
+                    <View style={styles.stopSepDot} />
+                    <Text style={styles.stopSender}>{t('package.senderMe')}</Text>
+                  </View>
+                  <Text style={styles.stopAddress} numberOfLines={1}>{pickupAddr}</Text>
+                </View>
+                <View style={styles.stopRow}>
+                  <Text style={styles.stopLabelRed}>{t('package.dropoffPoint')}</Text>
+                  <Text style={styles.stopAddress} numberOfLines={1}>{dropoffAddr}</Text>
+                  <Text style={styles.stopReceiver} numberOfLines={1}>
+                    {t('package.receiverLabel', { name: recipientName })} • {recipientPhone}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity style={styles.routeToggleBtn} activeOpacity={0.85}>
+                <MaterialIcon name="alt-route" size={18} color={colors.outline} />
+              </TouchableOpacity>
+            </View>
+
+            {/* Package Spec Tags */}
+            <View style={styles.tagBar}>
+              <View style={styles.tagPrimary}>
+                <MaterialIcon name="inventory-2" size={16} color={colors.primary} />
+                <Text style={styles.tagPrimaryText}>{selectedCategory.toUpperCase()}</Text>
+              </View>
+              <View style={styles.tagMuted}>
+                <MaterialIcon name="scale" size={14} color={colors.onSurfaceVariant} />
+                <Text style={styles.tagMutedText}>{weightTier}</Text>
+              </View>
+              <View style={styles.tagMuted}>
+                <MaterialIcon name={isFragile ? "warning" : "verified"} size={14} color={colors.onSurfaceVariant} />
+                <Text style={styles.tagMutedText}>
+                  {isFragile ? t('package.fragileBadge') : t('package.specs')}
                 </Text>
               </View>
             </View>
-            <TouchableOpacity style={styles.routeToggleBtn} activeOpacity={0.85}>
-              <MaterialIcon name="alt-route" size={18} color={colors.outline} />
-            </TouchableOpacity>
           </View>
 
-          {/* Package Spec Tags */}
-          <View style={styles.tagBar}>
-            <View style={styles.tagPrimary}>
-              <MaterialIcon name="inventory-2" size={16} color={colors.primary} />
-              <Text style={styles.tagPrimaryText}>{selectedCategory.toUpperCase()}</Text>
-            </View>
-            <View style={styles.tagMuted}>
-              <MaterialIcon name="scale" size={14} color={colors.onSurfaceVariant} />
-              <Text style={styles.tagMutedText}>{weightTier}</Text>
-            </View>
-            <View style={styles.tagMuted}>
-              <MaterialIcon name={isFragile ? "warning" : "verified"} size={14} color={colors.onSurfaceVariant} />
-              <Text style={styles.tagMutedText}>
-                {isFragile ? t('package.fragileBadge') : t('package.specs')}
-              </Text>
+          {/* Vehicle Selection */}
+          <View style={styles.vehicleHeader}>
+            <Text style={styles.sectionTitle}>{t('package.chooseVehicle')}</Text>
+            <View style={styles.fastestBadge}>
+              <MaterialIcon name="bolt" size={14} color={colors.primary} />
+              <Text style={styles.fastestText}>{t('package.fastestMatching')}</Text>
             </View>
           </View>
-        </View>
-
-        {/* Vehicle Selection */}
-        <View style={styles.vehicleHeader}>
-          <Text style={styles.sectionTitle}>{t('package.chooseVehicle')}</Text>
-          <View style={styles.fastestBadge}>
-            <MaterialIcon name="bolt" size={14} color={colors.primary} />
-            <Text style={styles.fastestText}>{t('package.fastestMatching')}</Text>
-          </View>
-        </View>
-        <View style={styles.vehicleList}>
-          {dynamicVehicles.map((v: any) => {
-            const isSelected = selectedVehicleId === v.id;
-            return (
-              <TouchableOpacity
-                key={v.id}
-                onPress={() => setSelectedVehicleId(v.id)}
-                style={[styles.vehicleCard, isSelected ? styles.vehicleCardActive : styles.vehicleCardInactive]}
-                activeOpacity={0.9}
-              >
-                <View style={styles.vehicleTopRow}>
-                  <View style={styles.vehicleLeft}>
-                    <View style={[styles.vehicleAvatarWrapper, isTwoWheeler ? styles.avatarScooter : styles.avatarAuto]}>
-                      <Image
-                        source={v.id === 'two-wheeler' ? require('../../assets/images/bike.jpg') : require('../../assets/images/auto.png')}
-                        style={styles.vehicleImage}
-                        resizeMode="contain"
-                      />
-                    </View>
-                    <View style={styles.vehicleInfoCol}>
-                      <View style={styles.vehicleTitleRow}>
-                        <Text style={styles.vehicleName}>{v.name}</Text>
-                        <View style={[styles.vehicleBadge, isSelected ? styles.vehicleBadgeActive : styles.vehicleBadgeInactive]}>
-                          <Text style={[styles.vehicleBadgeText, isSelected && styles.vehicleBadgeTextActive]}>{v.badge}</Text>
+          <View style={styles.vehicleList}>
+            {dynamicVehicles.map((v: any) => {
+              const isSelected = selectedVehicleId === v.id;
+              return (
+                <TouchableOpacity
+                  key={v.id}
+                  onPress={() => setSelectedVehicleId(v.id)}
+                  style={[styles.vehicleCard, isSelected ? styles.vehicleCardActive : styles.vehicleCardInactive]}
+                  activeOpacity={0.9}
+                >
+                  <View style={styles.vehicleTopRow}>
+                    <View style={styles.vehicleLeft}>
+                      <View style={[styles.vehicleAvatarWrapper, isTwoWheeler ? styles.avatarScooter : styles.avatarAuto]}>
+                        <Image
+                          source={v.id === 'two-wheeler' ? require('../../assets/images/bike.jpg') : require('../../assets/images/auto.png')}
+                          style={styles.vehicleImage}
+                          resizeMode="contain"
+                        />
+                      </View>
+                      <View style={styles.vehicleInfoCol}>
+                        <View style={styles.vehicleTitleRow}>
+                          <Text style={styles.vehicleName}>{v.name}</Text>
+                          <View style={[styles.vehicleBadge, isSelected ? styles.vehicleBadgeActive : styles.vehicleBadgeInactive]}>
+                            <Text style={[styles.vehicleBadgeText, isSelected && styles.vehicleBadgeTextActive]}>{v.badge}</Text>
+                          </View>
+                        </View>
+                        <View style={styles.etaRow}>
+                          <MaterialIcon name="schedule" size={15} color={isSelected ? colors.primary : colors.textMuted} />
+                          <Text style={[styles.etaText, isSelected && styles.etaTextActive]}>
+                            {t('package.eta', { eta: v.eta })}
+                          </Text>
                         </View>
                       </View>
-                      <View style={styles.etaRow}>
-                        <MaterialIcon name="schedule" size={15} color={isSelected ? colors.primary : colors.textMuted} />
-                        <Text style={[styles.etaText, isSelected && styles.etaTextActive]}>
-                          {t('package.eta', { eta: v.eta })}
-                        </Text>
-                      </View>
+                    </View>
+                    <View style={styles.priceCol}>
+                      <Text style={[styles.priceValue, isSelected && styles.priceValueActive]}>₹{v.price}</Text>
+                      <Text style={styles.priceCaption}>{t('package.guaranteedFare')}</Text>
                     </View>
                   </View>
-                  <View style={styles.priceCol}>
-                    <Text style={[styles.priceValue, isSelected && styles.priceValueActive]}>₹{v.price}</Text>
-                    <Text style={styles.priceCaption}>{t('package.guaranteedFare')}</Text>
-                  </View>
-                </View>
-                <Text style={styles.vehicleDesc}>{v.description}</Text>
-                {isSelected && (
-                  <View style={styles.checkBadge}>
-                    <MaterialIcon name="check" size={14} color={colors.onPrimary} />
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
-        </View>
+                  <Text style={styles.vehicleDesc}>{v.description}</Text>
+                  {isSelected && (
+                    <View style={styles.checkBadge}>
+                      <MaterialIcon name="check" size={14} color={colors.onPrimary} />
+                    </View>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
 
-        {/* Delivery Instructions */}
-        <View style={styles.instructionsCard}>
-          <View style={styles.instructionsHeader}>
-            <View style={styles.instructionsLabel}>
-              <MaterialIcon name="edit-note" size={18} color={colors.primary} />
-              <Text style={styles.instructionsTitle}>{t('package.deliveryInstructions')}</Text>
+          {/* Delivery Instructions */}
+          <View style={styles.instructionsCard}>
+            <View style={styles.instructionsHeader}>
+              <View style={styles.instructionsLabel}>
+                <MaterialIcon name="edit-note" size={18} color={colors.primary} />
+                <Text style={styles.instructionsTitle}>{t('package.deliveryInstructions')}</Text>
+              </View>
+              <Text style={styles.optionalTag}>{t('common.optional')}</Text>
             </View>
-            <Text style={styles.optionalTag}>{t('common.optional')}</Text>
+            <TextInput
+              style={styles.notesInput}
+              multiline
+              numberOfLines={2}
+              placeholder={t('package.instructionsPlaceholder')}
+              placeholderTextColor={colors.outline}
+              value={notes}
+              onChangeText={setNotes}
+            />
+            <View style={styles.chipBar}>
+              {INSTRUCTION_CHIPS.map((chip) => (
+                <TouchableOpacity
+                  key={chip}
+                  style={styles.instructionChip}
+                  onPress={() => appendInstruction(chip)}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.instructionChipText}>{chip}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
-          <TextInput
-            style={styles.notesInput}
-            multiline
-            numberOfLines={2}
-            placeholder={t('package.instructionsPlaceholder')}
-            placeholderTextColor={colors.outline}
-            value={notes}
-            onChangeText={setNotes}
-          />
-          <View style={styles.chipBar}>
-            {INSTRUCTION_CHIPS.map((chip) => (
-              <TouchableOpacity
-                key={chip}
-                style={styles.instructionChip}
-                onPress={() => appendInstruction(chip)}
-                activeOpacity={0.85}
-              >
-                <Text style={styles.instructionChipText}>{chip}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
 
-        {/* Fare Breakdown */}
-        <View style={styles.fareCard}>
-          <View style={styles.fareHeader}>
-            <View style={styles.fareLabelRow}>
-              <MaterialIcon name="receipt-long" size={16} color={colors.primary} />
-              <Text style={styles.fareLabel}>{t('package.fareBreakdown')}</Text>
+          {/* Fare Breakdown */}
+          <View style={styles.fareCard}>
+            <View style={styles.fareHeader}>
+              <View style={styles.fareLabelRow}>
+                <MaterialIcon name="receipt-long" size={16} color={colors.primary} />
+                <Text style={styles.fareLabel}>{t('package.fareBreakdown')}</Text>
+              </View>
+              <Text style={styles.noSurgeText}>{t('package.noSurge')}</Text>
             </View>
-            <Text style={styles.noSurgeText}>{t('package.noSurge')}</Text>
+            <View style={styles.fareLines}>
+              <View style={styles.fareLine}>
+                <Text style={styles.fareLineLabel}>{t('package.baseFare')}</Text>
+                <Text style={styles.fareLineValue}>₹{vehicle.baseFare}</Text>
+              </View>
+              <View style={styles.fareLine}>
+                <Text style={styles.fareLineLabel}>{t('package.distanceCharge')}</Text>
+                <Text style={styles.fareLineValue}>₹{vehicle.distanceCharge}</Text>
+              </View>
+              <View style={styles.fareLine}>
+                <Text style={styles.fareLineLabel}>{t('package.protectionSafety')}</Text>
+                <Text style={styles.fareFree}>{t('common.free')}</Text>
+              </View>
+            </View>
+            <View style={styles.fareDivider} />
+            <View style={styles.fareTotalRow}>
+              <Text style={styles.fareTotalLabel}>{t('package.totalEstimatedFare')}</Text>
+              <Text style={styles.fareTotalValue}>₹{vehicle.price}</Text>
+            </View>
           </View>
-          <View style={styles.fareLines}>
-            <View style={styles.fareLine}>
-              <Text style={styles.fareLineLabel}>{t('package.baseFare')}</Text>
-              <Text style={styles.fareLineValue}>₹{vehicle.baseFare}</Text>
-            </View>
-            <View style={styles.fareLine}>
-              <Text style={styles.fareLineLabel}>{t('package.distanceCharge')}</Text>
-              <Text style={styles.fareLineValue}>₹{vehicle.distanceCharge}</Text>
-            </View>
-            <View style={styles.fareLine}>
-              <Text style={styles.fareLineLabel}>{t('package.protectionSafety')}</Text>
-              <Text style={styles.fareFree}>{t('common.free')}</Text>
-            </View>
-          </View>
-          <View style={styles.fareDivider} />
-          <View style={styles.fareTotalRow}>
-            <Text style={styles.fareTotalLabel}>{t('package.totalEstimatedFare')}</Text>
-            <Text style={styles.fareTotalValue}>₹{vehicle.price}</Text>
-          </View>
-        </View>
         </ScrollView>
       </KeyboardAvoidingView>
 
