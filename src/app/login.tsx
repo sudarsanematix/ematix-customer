@@ -60,25 +60,43 @@ export default function LoginScreen() {
     setErrorMsg('');
     setLoading(true);
 
-    // MOCK FLOW: Mock OTP 1234 verification
-    setTimeout(async () => {
+    try {
+      const API_BASE = process.env.EXPO_PUBLIC_API_URL ?? 'http://192.168.1.35:4000';
+      const response = await fetch(`${API_BASE}/api/auth/customer/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ phone, otp }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.user && data.token) {
+        await login(data.user, data.token);
+        router.replace('/(tabs)/home');
+      } else if (data.error === 'USER_NOT_FOUND') {
+        setNotRegistered(true);
+        setErrorMsg('');
+      } else {
+        setErrorMsg(data.error || data.message || 'Invalid OTP');
+      }
+    } catch {
+      // If backend is unreachable or local mock
       if (otp === '1234') {
         const mockUser = {
           id: `cust-${phone.replace(/\D/g, '') || 'mock-1'}`,
           phone,
           name: 'Customer',
           email: `${phone.replace(/\D/g, '') || 'user'}@ematix.com`,
-          createdAt: new Date().toISOString()
+          createdAt: new Date().toISOString(),
         };
         const mockToken = `mock-token-${Date.now()}`;
         await login(mockUser, mockToken);
-        setLoading(false);
         router.replace('/(tabs)/home');
       } else {
-        setLoading(false);
         setErrorMsg('Invalid OTP. Use 1234 for testing.');
       }
-    }, 400);
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

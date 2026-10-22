@@ -455,7 +455,7 @@ export default function HomeScreen() {
             <MaterialIcon name="search" size={22} color={colors.primary} />
             <TextInput
               style={styles.searchInput}
-              placeholder="Where do you want to go?"
+              placeholder={t('home.whereDoYouWantToGo')}
               placeholderTextColor={colors.textMuted}
             />
             <TouchableOpacity style={styles.micBtn} activeOpacity={0.8}>
@@ -466,16 +466,16 @@ export default function HomeScreen() {
             {user?.savedLocations?.find((loc: any) => loc.name.toLowerCase() === 'work') && (
               <TouchableOpacity style={styles.tag}>
                 <MaterialIcon name="work" size={16} color={colors.primary} />
-                <Text style={[styles.tagText, { maxWidth: 150 }]} numberOfLines={1}>Work • {user?.savedLocations?.find((loc: any) => loc.name.toLowerCase() === 'work')?.address}</Text>
+                <Text style={[styles.tagText, { maxWidth: 150 }]} numberOfLines={1}>{t('home.workTag')} • {user?.savedLocations?.find((loc: any) => loc.name.toLowerCase() === 'work')?.address}</Text>
               </TouchableOpacity>
             )}
             <TouchableOpacity style={styles.tag}>
               <MaterialIcon name="shopping-bag" size={16} color={colors.accentRed} />
-              <Text style={styles.tagText}>Phoenix Marketcity</Text>
+              <Text style={styles.tagText}>{t('data.locationPhoenixTitle')}</Text>
             </TouchableOpacity>
             <TouchableOpacity style={[styles.tag, styles.tagRecent]}>
               <MaterialIcon name="history" size={16} color={colors.primary} />
-              <Text style={styles.tagRecentText}>Recent</Text>
+              <Text style={styles.tagRecentText}>{t('home.recent')}</Text>
             </TouchableOpacity>
           </ScrollView>
         </View>
@@ -490,13 +490,15 @@ export default function HomeScreen() {
               </View>
               <View style={styles.etaBadge}>
                 <PingRing color={colors.primary} size={6} />
-                <Text style={styles.etaText}>3m away</Text>
+                <Text style={styles.etaText} numberOfLines={1}>{t('home.etaAway')}</Text>
               </View>
             </View>
-            <Text style={styles.actionTitle}>Book a Ride</Text>
-            <Text style={styles.actionDesc}>Autos & Cabs with guaranteed upfront fares</Text>
+            <View style={styles.actionBody}>
+              <Text style={styles.actionTitle} numberOfLines={1}>{t('home.bookARide')}</Text>
+              <Text style={styles.actionDesc} numberOfLines={3}>{t('home.bookARideDesc')}</Text>
+            </View>
             <TouchableOpacity style={[styles.actionBtn, styles.rideBtn]} activeOpacity={0.85} onPress={() => router.push('/choose-vehicle')}>
-              <Text style={styles.rideBtnText}>Ride Now</Text>
+              <Text style={styles.rideBtnText} numberOfLines={1}>{t('home.rideNow')}</Text>
               <MaterialIcon name="arrow-forward" size={16} color={colors.onPrimary} />
             </TouchableOpacity>
           </View>
@@ -508,13 +510,15 @@ export default function HomeScreen() {
                 <MaterialIcon name="inventory-2" size={24} color={colors.accentRed} />
               </View>
               <View style={styles.doorBadge}>
-                <Text style={styles.doorText}>Door-to-door</Text>
+                <Text style={styles.doorText} numberOfLines={1}>{t('home.doorToDoor')}</Text>
               </View>
             </View>
-            <Text style={styles.actionTitle}>Send Parcel</Text>
-            <Text style={styles.actionDesc}>Instant delivery via Two-wheelers & Autos</Text>
+            <View style={styles.actionBody}>
+              <Text style={styles.actionTitle} numberOfLines={1}>{t('home.sendParcel')}</Text>
+              <Text style={styles.actionDesc} numberOfLines={3}>{t('home.sendParcelDesc')}</Text>
+            </View>
             <TouchableOpacity style={[styles.actionBtn, styles.sendBtn]} activeOpacity={0.85} onPress={() => router.push('/destination-search?vehicle=parcel')}>
-              <Text style={styles.sendBtnText}>Send Now</Text>
+              <Text style={styles.sendBtnText} numberOfLines={1}>{t('common.sendNow')}</Text>
               <MaterialIcon name="send" size={16} color={colors.primary} />
             </TouchableOpacity>
           </View>
@@ -523,16 +527,18 @@ export default function HomeScreen() {
         {/* Live Vehicles Nearby */}
         <View style={styles.radarCard}>
           <View style={styles.radarHeader}>
-            <View>
-              <Text style={styles.radarTitle}>Live Vehicles Nearby</Text>
-              <Text style={styles.radarSubtitle}>
-                {filteredPartners.length} {activeChipLabel}
-                {filteredPartners.length === 1 ? '' : 's'} active
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.radarTitle} numberOfLines={1}>{t('home.liveVehiclesNearby')}</Text>
+              <Text style={styles.radarSubtitle} numberOfLines={1}>
+                {t('home.activeCount_other', {
+                  count: filteredPartners.length,
+                  label: activeChipLabel,
+                })}
               </Text>
             </View>
             <View style={styles.liveBadge}>
               <PulsingDot color={colors.primary} />
-              <Text style={styles.liveText}>Live Radar</Text>
+              <Text style={styles.liveText}>{t('home.liveRadar')}</Text>
             </View>
           </View>
 
@@ -548,7 +554,7 @@ export default function HomeScreen() {
                     onPress={() => handleServiceChange(service)}
                   >
                     <Text style={{ fontWeight: '600', color: isActive ? colors.onPrimary : colors.onSurface }}>
-                      {service === 'ride' ? '🚗 Ride' : '📦 Parcel'}
+                      {service === 'ride' ? t('home.rideChip') : t('home.parcelChip')}
                     </Text>
                   </TouchableOpacity>
                 );
@@ -637,7 +643,7 @@ export default function HomeScreen() {
               <View style={styles.mapEmpty} pointerEvents="none">
                 <MaterialIcon name="near-me" size={14} color={colors.onSurfaceVariant} />
                 <Text style={styles.mapEmptyText}>
-                  No {activeChipLabel.toLowerCase()}s nearby right now
+                  {t('home.noVehiclesNearby', { label: activeChipLabel })}
                 </Text>
               </View>
             ) : null}
@@ -659,12 +665,12 @@ export default function HomeScreen() {
                 <MaterialIcon name="auto-awesome" size={20} color={colors.onPrimary} />
               </View>
               <View>
-                <Text style={styles.aiTitle}>Ask Ematix</Text>
-                <Text style={styles.aiSubtitle}>Smart Mobility & Delivery Concierge</Text>
+                <Text style={styles.aiTitle}>{t('nav.askEmatix')}</Text>
+                <Text style={styles.aiSubtitle}>{t('home.aiSubtitle')}</Text>
               </View>
             </View>
             <View style={styles.aiBadge}>
-              <Text style={styles.aiBadgeText}>AI Agent</Text>
+              <Text style={styles.aiBadgeText}>{t('home.aiAgent')}</Text>
             </View>
           </View>
           <View style={styles.aiContent}>
@@ -676,16 +682,16 @@ export default function HomeScreen() {
               <Text style={styles.aiReply}>{aiReply}</Text>
             ) : (
               <>
-                <Text style={styles.aiPrompt}>How can I assist your travel or delivery today?</Text>
+                <Text style={styles.aiPrompt}>{t('home.aiPrompt')}</Text>
                 <View style={styles.aiChips}>
-                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage('Book auto to T. Nagar')}>
-                    <Text style={styles.aiChipText}>⚡ Book auto to T. Nagar</Text>
+                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage(t('home.chipBookAuto'))}>
+                    <Text style={styles.aiChipText}>{t('home.chipBookAuto')}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage('Compare Auto vs Cab')}>
-                    <Text style={styles.aiChipText}>📊 Compare Auto vs Cab</Text>
+                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage(t('home.chipCompare'))}>
+                    <Text style={styles.aiChipText}>{t('home.chipCompare')}</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage('Send parcel to Anna Nagar')}>
-                    <Text style={styles.aiChipText}>📦 Send parcel to Anna Nagar</Text>
+                  <TouchableOpacity style={styles.aiChip} activeOpacity={0.85} onPress={() => sendAiMessage(t('home.chipSendParcel'))}>
+                    <Text style={styles.aiChipText}>{t('home.chipSendParcel')}</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -694,7 +700,7 @@ export default function HomeScreen() {
           <View style={styles.aiInputRow}>
             <TextInput
               style={styles.aiInput}
-              placeholder="Type or ask Ematix anything..."
+              placeholder={t('home.aiInputPlaceholder')}
               placeholderTextColor={colors.textMuted}
               value={aiInput}
               onChangeText={setAiInput}
@@ -715,9 +721,9 @@ export default function HomeScreen() {
         {/* Recent Destinations */}
         <View style={styles.recentSection}>
           <View style={styles.recentHeader}>
-            <Text style={styles.radarTitle}>Recent Destinations</Text>
+            <Text style={styles.radarTitle}>{t('home.recentDestinations')}</Text>
             <TouchableOpacity activeOpacity={0.85}>
-              <Text style={styles.seeAll}>See all</Text>
+              <Text style={styles.seeAll}>{t('common.seeAll')}</Text>
             </TouchableOpacity>
           </View>
           <View style={styles.recentList}>
@@ -749,7 +755,7 @@ export default function HomeScreen() {
                       </View>
                     </View>
                     <TouchableOpacity style={styles.rebookBtn} activeOpacity={0.85}>
-                      <Text style={styles.rebookText}>Rebook</Text>
+                      <Text style={styles.rebookText}>{t('common.rebook')}</Text>
                       <MaterialIcon name="chevron-right" size={16} color={colors.primary} />
                     </TouchableOpacity>
                   </TouchableOpacity>
@@ -764,8 +770,8 @@ export default function HomeScreen() {
             <MaterialIcon name="shield" size={28} color={colors.primary} />
           </View>
           <View style={styles.safeRideTextWrap}>
-            <Text style={styles.safeRideTitle}>Ematix SafeRide Active</Text>
-            <Text style={styles.safeRideDesc}>Verified captains & real-time route deviation protection enabled.</Text>
+            <Text style={styles.safeRideTitle}>{t('home.safeRideTitle')}</Text>
+            <Text style={styles.safeRideDesc}>{t('home.safeRideDesc')}</Text>
           </View>
           <MaterialIcon name="verified" size={20} color={colors.primary} />
         </View>
@@ -874,6 +880,7 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     shadowRadius: 4,
     elevation: 2,
     justifyContent: 'space-between',
+    minHeight: 220,
   },
   rideDecor: {
     position: 'absolute',
@@ -912,36 +919,46 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     alignItems: 'center',
     backgroundColor: colors.surfaceContainerHigh,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 999,
-    gap: 6,
-    height: 20,
+    gap: 5,
+    flexShrink: 1,
   },
   pingRing: { position: 'absolute' },
-  etaText: { ...type.labelSm, color: colors.primary, fontSize: 11 },
+  etaText: { ...type.labelSm, color: colors.primary, fontSize: 11, fontWeight: '600' },
   doorBadge: {
     backgroundColor: colors.surfaceContainer,
     paddingHorizontal: 8,
-    paddingVertical: 2,
+    paddingVertical: 4,
     borderRadius: 999,
+    flexShrink: 1,
   },
-  doorText: { ...type.labelSm, color: colors.textMuted, fontSize: 11 },
+  doorText: { ...type.labelSm, color: colors.textMuted, fontSize: 11, fontWeight: '500' },
+  actionBody: {
+    flex: 1,
+    justifyContent: 'flex-start',
+    zIndex: 1,
+  },
   actionTitle: {
     ...type.headlineSm,
     color: colors.onSurface,
-    marginTop: 8,
-    zIndex: 1,
+    marginTop: 6,
+    fontSize: 16,
+    lineHeight: 22,
   },
   actionDesc: {
     ...type.bodySm,
     color: colors.textMuted,
     marginTop: 4,
-    zIndex: 1,
+    fontSize: 12,
+    lineHeight: 16,
   },
   actionBtn: {
     marginTop: 12,
     width: '100%',
-    height: 40,
+    minHeight: 42,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
     borderRadius: radius.lg,
     flexDirection: 'row',
     alignItems: 'center',
@@ -950,9 +967,9 @@ const createStyles = (colors: any, mapTheme: MapThemeTokens) => StyleSheet.creat
     zIndex: 1,
   },
   rideBtn: { backgroundColor: colors.primaryContainer },
-  rideBtnText: { ...type.labelMd, color: colors.onPrimary },
+  rideBtnText: { ...type.labelMd, color: colors.onPrimary, fontSize: 13, fontWeight: '600' },
   sendBtn: { backgroundColor: colors.lightBlueTint },
-  sendBtnText: { ...type.labelMd, color: colors.primary },
+  sendBtnText: { ...type.labelMd, color: colors.primary, fontSize: 13, fontWeight: '600' },
   aiCard: {
     backgroundColor: colors.primary,
     borderRadius: radius.xl,

@@ -80,8 +80,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         await AsyncStorage.setItem('@ematix_user', JSON.stringify(data.user));
       }
       return data?.stats ?? null;
-    } catch (e) {
-      console.warn('Failed to refresh profile', e);
+    } catch (e: any) {
+      if (e?.status === 401 || e?.code === 'unauthorized') {
+        // Stale or expired token; clean up session to stop continuous 401s
+        await logout();
+      } else {
+        console.warn('Failed to refresh profile', e);
+      }
       return null;
     } finally {
       setIsRefreshing(false);
